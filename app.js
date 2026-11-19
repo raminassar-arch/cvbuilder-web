@@ -1134,8 +1134,6 @@ function generateFiles() {
 
 /* ----------------------------------------------------------- web UI text */
 const WEB_TEXT = {
-  back: { en: 'Back', pl: 'Wstecz', ar: 'رجوع' },
-  next: { en: 'Next', pl: 'Dalej', ar: 'التالي' },
   fileFormat: { en: 'File format', pl: 'Format pliku', ar: 'تنسيق الملف' },
   formatPdf: { en: 'PDF (Save as PDF)', pl: 'PDF (Zapisz jako PDF)', ar: 'PDF (حفظ كملف PDF)' },
   formatWord: { en: 'Word (.doc)', pl: 'Word (.doc)', ar: 'Word (.doc)' },
