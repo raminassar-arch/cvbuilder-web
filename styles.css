@@ -159,8 +159,18 @@ textarea { resize: vertical; }
 .progress-track { height: 7px; background: var(--bg); border-radius: 4px; overflow: hidden; margin-bottom: 18px; }
 .progress-fill { height: 100%; width: 10%; background: linear-gradient(90deg, var(--green), var(--gold)); transition: width .25s; }
 html[dir="rtl"] .progress-fill { background: linear-gradient(270deg, var(--green), var(--gold)); }
-.wizard-body { min-height: 260px; }
-.wizard-nav { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border); }
+/* Fixed-height scroll area keeps Back / Next / jump pinned in the same place on every step. */
+.wizard-body {
+  height: 340px; overflow-y: auto; overflow-x: hidden;
+  padding-inline-end: 8px; scrollbar-color: var(--border) transparent;
+}
+.wizard-nav {
+  position: sticky; bottom: -24px; z-index: 2;
+  background: var(--panel);
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  margin: 20px -24px -24px; padding: 16px 24px;
+  border-top: 1px solid var(--border);
+}
 .wizard-nav select { max-width: 280px; }
 
 /* ---------- Tabs ---------- */
@@ -188,6 +198,30 @@ html[dir="rtl"] .preview { font-family: "Segoe UI", Tahoma, sans-serif; directio
 .download-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .options-row { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--border); }
 .job-label { display: block; font-weight: 600; color: var(--green); margin: 12px 0 4px; }
+
+/* ---------- Single Generate panel: style -> format -> generate ---------- */
+.generate-panel {
+  background: var(--panel-2); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 18px; margin: 18px 0 4px;
+}
+.generate-section { margin-bottom: 16px; }
+.generate-section + .generate-section { border-top: 1px solid var(--border); padding-top: 16px; }
+.generate-section .theme-picker { margin: 0; }
+.generate-section.options-row { margin-top: 0; padding-top: 16px; }
+.format-options { display: flex; flex-wrap: wrap; gap: 10px; }
+.format-card {
+  display: inline-flex; align-items: center; gap: 9px;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 14px; cursor: pointer; font-weight: 600; font-size: .92rem;
+}
+.format-card:hover { border-color: var(--gold); }
+.format-card:has(input:checked) { border-color: var(--green); color: var(--green); background: var(--sel); }
+.format-card input { accent-color: var(--green); width: 16px; height: 16px; margin: 0; }
+.generate-action { border-top: 1px solid var(--border); padding-top: 16px; }
+.generate-action .btn.large { margin-top: 0; }
+.generate-action .muted { font-size: .82rem; margin: 8px 0 0; }
+.generate-status { font-size: .88rem; margin: 10px 0 0; color: var(--green); }
+.generate-status.warn { color: var(--gold); }
 
 /* ---------- Document theme picker ---------- */
 .theme-picker { margin: 16px 0; }

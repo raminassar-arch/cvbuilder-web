@@ -47,8 +47,14 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
   kluczowych z ogłoszenia oraz wynik 0–100 z listą znalezisk.
 - **Styl dokumentu**: czarno-biały, zielono-czarny, różowo-czarny (tylko kolory – bez
   tabel, pól tekstowych i obrazów w tekście, żeby ATS czytał treść poprawnie).
-- Pobieranie: zwykły `.txt`, Word-compatible `.doc` (HTML z przestrzeniami nazw Worda)
-  oraz **Drukuj / Zapisz jako PDF** przez okno druku przeglądarki.
+- **Ostatni ekran ma jeden przycisk `Generuj`.** Najpierw wybierasz styl dokumentu,
+  potem zaznaczasz format(y): **PDF** i/lub **Word (`.doc`)** – pliki `.txt` nie są
+  już oferowane. Po kliknięciu `Generuj` powstają zaznaczone pliki:
+  - **Word** – jeden plik `.doc` (HTML z przestrzeniami nazw Worda) zawierający CV,
+    a po włączeniu listu motywacyjnego także list na następnej stronie;
+  - **PDF** – otwiera się osobne okno druku z samym dokumentem (bez interfejsu
+    aplikacji); w oknie wybierz „Zapisz jako PDF". Działa też w osadzeniu Google Sites.
+  Jeśli nie zaznaczysz żadnego formatu, aplikacja pokaże ostrzeżenie i nic nie pobierze.
 
 ---
 
@@ -129,9 +135,11 @@ Po wstawieniu rozciągnij blok na całą szerokość i ustaw wysokość ok. 900�
 * **Zalecenie:** w Google Sites umieść przede wszystkim odnośnik „Otwórz CVBuilder”
   (samodzielna karta), a osadzenie traktuj jako podgląd. Gotowy kod przycisku
   generuje helper `embed.html` w sekcji 4.
-* Pobrane pliki `.txt` i `.doc` trafiają do folderu pobranych przeglądarki –
-  Google Sites nie pośredniczy w ich zapisie.
-* PDF powstaje przez okno druku przeglądarki („Zapisz jako PDF”).
+* Pobrany plik `.doc` trafia do folderu pobranych przeglądarki – Google Sites
+  nie pośredniczy w jego zapisie.
+* PDF powstaje w osobnym oknie druku („Zapisz jako PDF"). Jeśli przeglądarka
+  zablokuje otwarcie nowego okna z osadzonej ramki, aplikacja użyje awaryjnego
+  druku na bieżącej stronie.
 
 ---
 

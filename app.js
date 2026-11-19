@@ -1,6 +1,6 @@
 'use strict';
 /* CVBuilder Web v2.5.0 - fully client-side port of cv_builder.py.
-   No server, no uploads. EN/PL/AR, wizard + tabs, ATS scoring, themed DOC/TXT/PDF. */
+   No server, no uploads. EN/PL/AR, wizard + tabs, ATS scoring, themed DOC/PDF export. */
 
 const VERSION = '2.5.0';
 const $ = (s) => document.querySelector(s);
@@ -728,7 +728,7 @@ function setLanguage(lang) {
   applyLanguage();
   renderWizard();
   renderTabs();
-  if (ST.report) buildOutputs(false);
+  if (ST.report) buildOutputs(false, true);
 }
 
 /* --------------------------------------------------------------- widgets */
@@ -1038,7 +1038,7 @@ function renderTabs() {
 }
 
 /* --------------------------------------------------------------- outputs */
-function buildOutputs(scroll) {
+function buildOutputs(scroll, quiet) {
   ST.cv = cvText(ST.profile);
   ST.letter = ST.cover ? coverLetter(ST.profile, ST.jobText) : '';
   ST.report = checkCV(ST.cv, ST.jobText);
@@ -1057,7 +1057,7 @@ function buildOutputs(scroll) {
   const banner = $('#score-banner');
   banner.classList.toggle('low', rep.score < 75);
   banner.textContent = `${T('OVERALL ATS SCORE:')} ${rep.score}/100 — ${band}`;
-  showPane('output');
+  if (!quiet) showPane('output');
   if (scroll) window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -1070,33 +1070,96 @@ function download(name, content, mime) {
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
-function printDocument(which) {
+/* One printable package: CV first, then the cover letter on a new page when enabled. */
+function packageBody() {
+  let body = docBody(ST.profile, { photo: ST.photo });
+  if (ST.cover && ST.letter && ST.letter.trim()) {
+    body += '\n<div class="page-break"></div>\n' + letterBody(ST.profile, ST.letter);
+  }
+  return body;
+}
+
+/* Print from a dedicated top-level window so the PDF contains only the document,
+   even when the app runs inside an iframe (Google Sites). Falls back to the
+   hidden in-page print area if a pop-up / blob window cannot be opened. */
+function openPdf(body) {
+  const title = `CV - ${ST.profile.name}`;
+  const autoPrint = '<script>window.addEventListener("load",function(){'
+    + 'setTimeout(function(){window.print();},250);});</script>';
+  const html = '<!DOCTYPE html><html lang="' + ST.lang + '" dir="' + (isRTL() ? 'rtl' : 'ltr') + '">'
+    + '<head><meta charset="utf-8"><title>' + esc(title) + '</title>'
+    + '<style>' + docCss(ST.theme) + '</style></head><body>' + body + autoPrint + '</body></html>';
+  let url = '';
+  try { url = URL.createObjectURL(new Blob([html], { type: 'text/html;charset=utf-8' })); }
+  catch (e) { url = ''; }
+  const w = url ? window.open(url, '_blank') : null;
+  if (w) {
+    setTimeout(() => { try { URL.revokeObjectURL(url); } catch (e) {} }, 60000);
+    return true;
+  }
+  if (url) { try { URL.revokeObjectURL(url); } catch (e) {} }
   const area = $('#print-area');
   area.className = 'doc theme-' + ST.theme;
   area.setAttribute('dir', isRTL() ? 'rtl' : 'ltr');
-  if (which === 'letter') {
-    area.innerHTML = letterBody(ST.profile, ST.letter);
-  } else {
-    area.innerHTML = docBody(ST.profile, { photo: ST.photo });
-  }
-  window.print();
+  area.innerHTML = body;
+  setTimeout(() => window.print(), 50);
+  return false;
 }
-function handleDownload(kind) {
+
+function setGenerateStatus(key, warn) {
+  const el = $('#generate-status');
+  if (!el) return;
+  el.textContent = T(key);
+  el.classList.toggle('warn', !!warn);
+  el.hidden = false;
+}
+
+/* The only action on the last page: build, then export the checked formats. */
+function generateFiles() {
+  buildOutputs(false, true);
+  const wantPdf = $('#fmt-pdf').checked;
+  const wantDoc = $('#fmt-doc').checked;
+  const status = $('#generate-status');
+  if (status) status.hidden = true;
+  if (!wantPdf && !wantDoc) { setGenerateStatus('noFormat', true); return; }
+  const body = packageBody();
   const base = slugify(ST.profile.name);
-  if (kind === 'txt') download(`${base}-CV.txt`, ST.cv, 'text/plain');
-  else if (kind === 'doc') download(`${base}-CV.doc`,
-    wordHtml(`CV - ${ST.profile.name}`, docBody(ST.profile, { photo: ST.photo }), ST.theme,
-      isRTL() ? 'rtl' : 'ltr'), 'application/msword');
-  else if (kind === 'pdf') printDocument('cv');
-  else if (kind === 'letter-txt') download(`${base}-Cover-Letter.txt`, ST.letter, 'text/plain');
-  else if (kind === 'letter-doc') download(`${base}-Cover-Letter.doc`,
-    wordHtml(`${T('Cover Letter')} - ${ST.profile.name}`, letterBody(ST.profile, ST.letter), ST.theme,
-      isRTL() ? 'rtl' : 'ltr'), 'application/msword');
-  else if (kind === 'report-txt') download(`${base}-ATS-Report.txt`, ST.reportText, 'text/plain');
+  if (wantDoc) {
+    download(base + '-CV.doc',
+      wordHtml('CV - ' + ST.profile.name, body, ST.theme, isRTL() ? 'rtl' : 'ltr'),
+      'application/msword');
+  }
+  if (wantPdf) setGenerateStatus(openPdf(body) ? 'pdfDialogHint' : 'pdfFallbackHint', false);
 }
 
 /* ----------------------------------------------------------- web UI text */
 const WEB_TEXT = {
+  back: { en: 'Back', pl: 'Wstecz', ar: 'رجوع' },
+  next: { en: 'Next', pl: 'Dalej', ar: 'التالي' },
+  fileFormat: { en: 'File format', pl: 'Format pliku', ar: 'تنسيق الملف' },
+  formatPdf: { en: 'PDF (Save as PDF)', pl: 'PDF (Zapisz jako PDF)', ar: 'PDF (حفظ كملف PDF)' },
+  formatWord: { en: 'Word (.doc)', pl: 'Word (.doc)', ar: 'Word (.doc)' },
+  formatHint: {
+    en: 'Select one or both formats, then click Generate.',
+    pl: 'Zaznacz jeden lub oba formaty, a następnie kliknij „Generuj”.',
+    ar: 'اختر تنسيقًا واحدًا أو كليهما، ثم انقر على «إنشاء».'
+  },
+  generateFiles: { en: 'Generate', pl: 'Generuj', ar: 'إنشاء' },
+  noFormat: {
+    en: 'Select at least one format: PDF or Word.',
+    pl: 'Zaznacz co najmniej jeden format: PDF lub Word.',
+    ar: 'اختر تنسيقًا واحدًا على الأقل: PDF أو Word.'
+  },
+  pdfDialogHint: {
+    en: 'PDF ready - in the print window choose "Save as PDF", then Save.',
+    pl: 'PDF gotowy - w oknie druku wybierz „Zapisz jako PDF”, a następnie Zapisz.',
+    ar: 'ملف PDF جاهز - في نافذة الطباعة اختر «حفظ كملف PDF» ثم احفظ.'
+  },
+  pdfFallbackHint: {
+    en: 'PDF ready - the print dialog opened here. Choose "Save as PDF".',
+    pl: 'PDF gotowy - okno druku otworzyło się tutaj. Wybierz „Zapisz jako PDF”.',
+    ar: 'ملف PDF جاهز - فتحت نافذة الطباعة هنا. اختر «حفظ كملف PDF».'
+  },
   about: { en: 'About', pl: 'O programie', ar: 'حول' },
   questionnaire: { en: 'CV QUESTIONNAIRE', pl: 'KWESTIONARIUSZ CV', ar: 'استبيان السيرة الذاتية' },
   switchModeTabs: { en: 'Fill by tabs instead', pl: 'Wypełnij przez zakładki', ar: 'املأ باستخدام العلامات' },
@@ -1239,14 +1302,18 @@ function bindEvents() {
   $('#wiz-jump').addEventListener('change', (e) => { ST.wizStep = parseInt(e.target.value, 10); renderWizard(); });
 
   $('#edit-answers').addEventListener('click', () => setMode(ST.mode));
-  $('#opt-cover').addEventListener('change', (e) => { ST.cover = e.target.checked; if (ST.report) buildOutputs(false); });
+  $('#opt-cover').addEventListener('change', (e) => { ST.cover = e.target.checked; if (ST.report) buildOutputs(false, true); });
   $('#opt-photo').addEventListener('change', (e) => { ST.photo = e.target.checked; });
-  $('#job-text').addEventListener('input', (e) => { ST.jobText = e.target.value; });
-  $('#build-btn').addEventListener('click', () => buildOutputs(true));
-  $$('[data-download]').forEach((b) => b.addEventListener('click', () => handleDownload(b.dataset.download)));
+  let jobTimer;
+  $('#job-text').addEventListener('input', (e) => {
+    ST.jobText = e.target.value;
+    clearTimeout(jobTimer);
+    jobTimer = setTimeout(() => { if (ST.report) buildOutputs(false, true); }, 350);
+  });
+  $('#generate-btn').addEventListener('click', generateFiles);
   $$('.theme-btn').forEach((b) => b.addEventListener('click', () => {
     ST.theme = b.dataset.theme; saveLocal(); applyLanguage();
-    if (ST.report) buildOutputs(false);
+    if (ST.report) buildOutputs(false, true);
   }));
 }
 

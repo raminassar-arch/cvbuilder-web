@@ -65,9 +65,9 @@
         <div class="progress-track"><div id="wizard-progress" class="progress-fill"></div></div>
         <div id="wizard-body" class="wizard-body"></div>
         <div class="wizard-nav">
-          <button type="button" id="wiz-back" class="btn ghost" data-i18n="back">&lt; Back</button>
+          <button type="button" id="wiz-back" class="btn ghost" data-i18n="back">Back</button>
           <select id="wiz-jump" aria-label="Jump to question"></select>
-          <button type="button" id="wiz-next" class="btn primary" data-i18n="next">Next &gt;</button>
+          <button type="button" id="wiz-next" class="btn primary" data-i18n="next">Next</button>
         </div>
       </div>
     </section>
@@ -89,36 +89,10 @@
           <button type="button" id="edit-answers" class="btn ghost" data-i18n="editAnswers">Edit answers</button>
         </div>
         <div class="score-banner" id="score-banner"></div>
-        <div class="output-grid">
-          <div class="output-block">
-            <h3 data-i18n="cvDocument">CV document</h3>
-            <pre id="cv-preview" class="preview" aria-live="polite"></pre>
-            <div class="download-row">
-              <button type="button" class="btn" data-download="txt">.txt</button>
-              <button type="button" class="btn" data-download="doc">Word (.doc)</button>
-              <button type="button" class="btn" data-download="pdf">Print / PDF</button>
-            </div>
-          </div>
-          <div class="output-block">
-            <h3 data-i18n="coverLetter">Cover letter</h3>
-            <pre id="letter-preview" class="preview" aria-live="polite"></pre>
-            <div class="download-row">
-              <button type="button" class="btn" data-download="letter-txt">.txt</button>
-              <button type="button" class="btn" data-download="letter-doc">Word (.doc)</button>
-            </div>
-          </div>
-        </div>
-        <div class="output-block">
-          <h3 data-i18n="atsReport">ATS report</h3>
-          <pre id="ats-preview" class="preview" aria-live="polite"></pre>
-          <div class="download-row">
-            <button type="button" class="btn" data-download="report-txt">.txt</button>
-          </div>
-        </div>
-        <div class="options-row">
-          <label class="checkbox-row"><input type="checkbox" id="opt-cover" checked> <span data-i18n="includeCover">Include cover letter</span></label>
-          <label class="checkbox-row"><input type="checkbox" id="opt-photo"> <span data-i18n="includePhoto">Include photo in CV</span></label>
-          <div class="theme-picker">
+
+        <!-- One controlled step: style, then format, then a single Generate button. -->
+        <div class="generate-panel">
+          <div class="generate-section">
             <span class="theme-label" data-i18n="docTheme">Document style</span>
             <div class="theme-options" role="group" aria-label="Document style">
               <button type="button" class="theme-btn active" data-theme="mono"><span class="swatch swatch-mono"></span><span data-i18n="themeMono">Black &amp; white</span></button>
@@ -127,9 +101,39 @@
             </div>
             <p class="muted theme-note" data-i18n="themeNote">Colours only - no tables, text boxes or images, so ATS software can still read the text.</p>
           </div>
-          <label class="job-label" for="job-text" data-i18n="jobDescription">Job description (optional, for keyword match)</label>
-          <textarea id="job-text" rows="4" placeholder="Paste the job advertisement here..."></textarea>
-          <button type="button" id="build-btn" class="btn primary large" data-i18n="buildCV">Build CV &amp; ATS report</button>
+          <div class="generate-section">
+            <span class="theme-label" data-i18n="fileFormat">File format</span>
+            <div class="format-options" role="group" aria-label="File format">
+              <label class="format-card"><input type="checkbox" id="fmt-pdf" checked> <span data-i18n="formatPdf">PDF (Save as PDF)</span></label>
+              <label class="format-card"><input type="checkbox" id="fmt-doc" checked> <span data-i18n="formatWord">Word (.doc)</span></label>
+            </div>
+          </div>
+          <div class="generate-section options-row">
+            <label class="checkbox-row"><input type="checkbox" id="opt-cover" checked> <span data-i18n="includeCover">Include cover letter</span></label>
+            <label class="checkbox-row"><input type="checkbox" id="opt-photo"> <span data-i18n="includePhoto">Include photo in CV</span></label>
+            <label class="job-label" for="job-text" data-i18n="jobDescription">Job description (optional, for keyword match)</label>
+            <textarea id="job-text" rows="3" placeholder="Paste the job advertisement here..."></textarea>
+          </div>
+          <div class="generate-action">
+            <button type="button" id="generate-btn" class="btn primary large" data-i18n="generateFiles">Generate</button>
+            <p id="generate-hint" class="muted" data-i18n="formatHint">Select one or both formats, then click Generate.</p>
+            <p id="generate-status" class="generate-status" role="status" hidden></p>
+          </div>
+        </div>
+
+        <div class="output-grid">
+          <div class="output-block">
+            <h3 data-i18n="cvDocument">CV document</h3>
+            <pre id="cv-preview" class="preview" aria-live="polite"></pre>
+          </div>
+          <div class="output-block">
+            <h3 data-i18n="coverLetter">Cover letter</h3>
+            <pre id="letter-preview" class="preview" aria-live="polite"></pre>
+          </div>
+        </div>
+        <div class="output-block">
+          <h3 data-i18n="atsReport">ATS report</h3>
+          <pre id="ats-preview" class="preview" aria-live="polite"></pre>
         </div>
       </div>
     </section>
