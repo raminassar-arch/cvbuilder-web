@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="ATS-optimized CV generator and checker. Free, private, runs entirely in your browser.">
+  <link rel="icon" href="data:,">
+  <title>CVBuilder v2.5.0 - ATS CV Generator</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <span class="brand-mark">CV</span>
+        <div>
+          <h1 id="app-title">CVBuilder v2.5.0</h1>
+          <p id="app-subtitle" class="subtitle">ATS CV Generator</p>
+        </div>
+      </div>
+      <nav class="header-controls" aria-label="Preferences">
+        <div class="lang-switch" role="group" aria-label="Interface language">
+          <button type="button" class="lang-btn" data-lang="en" title="English">EN</button>
+          <button type="button" class="lang-btn" data-lang="pl" title="Polski">PL</button>
+          <button type="button" class="lang-btn" data-lang="ar" title="العربية">AR</button>
+        </div>
+        <button type="button" id="mode-toggle" class="ghost-btn" data-i18n="switchMode">Fill by tabs instead</button>
+        <button type="button" id="about-btn" class="ghost-btn" data-i18n="about">About</button>
+      </nav>
+    </div>
+  </header>
+
+  <main class="app-main">
+    <!-- ============ MODE CHOOSER ============ -->
+    <section id="pane-chooser" class="pane active" aria-labelledby="chooser-title">
+      <div class="card chooser-card">
+        <h2 id="chooser-title" data-i18n="chooseHow">How would you like to fill your CV?</h2>
+        <p class="muted" data-i18n="chooseHint">Pick the way that suits you. You can switch at any time.</p>
+        <div class="chooser-grid">
+          <button type="button" class="choice-card" id="choose-wizard">
+            <span class="choice-icon">&#128221;</span>
+            <strong data-i18n="wizardMode">Questionnaire (Q&amp;A)</strong>
+            <span class="muted" data-i18n="wizardDesc">Answer 10 simple questions, one screen at a time.</span>
+          </button>
+          <button type="button" class="choice-card" id="choose-tabs">
+            <span class="choice-icon">&#128203;</span>
+            <strong data-i18n="tabsMode">Manual tabs</strong>
+            <span class="muted" data-i18n="tabsDesc">Fill everything yourself on organised tabs.</span>
+          </button>
+        </div>
+        <label class="checkbox-row">
+          <input type="checkbox" id="dont-ask">
+          <span data-i18n="dontAsk">Don't ask again on startup</span>
+        </label>
+      </div>
+    </section>
+
+    <!-- ============ WIZARD ============ -->
+    <section id="pane-wizard" class="pane" aria-labelledby="wizard-head">
+      <div class="card wizard-card">
+        <div class="wizard-top">
+          <span class="eyebrow" data-i18n="questionnaire">CV QUESTIONNAIRE</span>
+        </div>
+        <h2 id="wizard-head" class="wizard-head"></h2>
+        <div class="progress-track"><div id="wizard-progress" class="progress-fill"></div></div>
+        <div id="wizard-body" class="wizard-body"></div>
+        <div class="wizard-nav">
+          <button type="button" id="wiz-back" class="btn ghost" data-i18n="back">&lt; Back</button>
+          <select id="wiz-jump" aria-label="Jump to question"></select>
+          <button type="button" id="wiz-next" class="btn primary" data-i18n="next">Next &gt;</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ MANUAL TABS ============ -->
+    <section id="pane-tabs" class="pane" aria-labelledby="tabs-title">
+      <div class="card tabs-card">
+        <h2 id="tabs-title" class="visually-hidden" data-i18n="manualEntry">Manual entry</h2>
+        <div class="tabs" id="tab-bar" role="tablist"></div>
+        <div id="tab-content" class="tab-content"></div>
+      </div>
+    </section>
+
+    <!-- ============ OUTPUT / RESULTS ============ -->
+    <section id="pane-output" class="pane" aria-labelledby="output-title">
+      <div class="card output-card">
+        <div class="output-head">
+          <h2 id="output-title" data-i18n="yourOutputs">Your outputs</h2>
+          <button type="button" id="edit-answers" class="btn ghost" data-i18n="editAnswers">Edit answers</button>
+        </div>
+        <div class="score-banner" id="score-banner"></div>
+        <div class="output-grid">
+          <div class="output-block">
+            <h3 data-i18n="cvDocument">CV document</h3>
+            <pre id="cv-preview" class="preview" aria-live="polite"></pre>
+            <div class="download-row">
+              <button type="button" class="btn" data-download="txt">.txt</button>
+              <button type="button" class="btn" data-download="doc">Word (.doc)</button>
+              <button type="button" class="btn" data-download="pdf">Print / PDF</button>
+            </div>
+          </div>
+          <div class="output-block">
+            <h3 data-i18n="coverLetter">Cover letter</h3>
+            <pre id="letter-preview" class="preview" aria-live="polite"></pre>
+            <div class="download-row">
+              <button type="button" class="btn" data-download="letter-txt">.txt</button>
+              <button type="button" class="btn" data-download="letter-doc">Word (.doc)</button>
+            </div>
+          </div>
+        </div>
+        <div class="output-block">
+          <h3 data-i18n="atsReport">ATS report</h3>
+          <pre id="ats-preview" class="preview" aria-live="polite"></pre>
+          <div class="download-row">
+            <button type="button" class="btn" data-download="report-txt">.txt</button>
+          </div>
+        </div>
+        <div class="options-row">
+          <label class="checkbox-row"><input type="checkbox" id="opt-cover" checked> <span data-i18n="includeCover">Include cover letter</span></label>
+          <label class="checkbox-row"><input type="checkbox" id="opt-photo"> <span data-i18n="includePhoto">Include photo in CV</span></label>
+          <div class="theme-picker">
+            <span class="theme-label" data-i18n="docTheme">Document style</span>
+            <div class="theme-options" role="group" aria-label="Document style">
+              <button type="button" class="theme-btn active" data-theme="mono"><span class="swatch swatch-mono"></span><span data-i18n="themeMono">Black &amp; white</span></button>
+              <button type="button" class="theme-btn" data-theme="green"><span class="swatch swatch-green"></span><span data-i18n="themeGreen">Green &amp; black</span></button>
+              <button type="button" class="theme-btn" data-theme="rose"><span class="swatch swatch-rose"></span><span data-i18n="themeRose">Rose &amp; black</span></button>
+            </div>
+            <p class="muted theme-note" data-i18n="themeNote">Colours only - no tables, text boxes or images, so ATS software can still read the text.</p>
+          </div>
+          <label class="job-label" for="job-text" data-i18n="jobDescription">Job description (optional, for keyword match)</label>
+          <textarea id="job-text" rows="4" placeholder="Paste the job advertisement here..."></textarea>
+          <button type="button" id="build-btn" class="btn primary large" data-i18n="buildCV">Build CV &amp; ATS report</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer">
+    <span data-i18n="privacyNote">Everything runs in your browser. Nothing is uploaded.</span>
+    <span id="footer-version">CVBuilder v2.5.0</span>
+  </footer>
+
+  <!-- Hidden print area: populated with the themed document before printing to PDF -->
+  <div id="print-area" class="doc" aria-hidden="true"></div>
+
+  <!-- About dialog (in-page modal, no pop-up window) -->
+  <div id="about-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-modal></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
+      <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
+      <h2 id="about-modal-title">CVBuilder v2.5.0</h2>
+      <p id="about-body"></p>
+    </div>
+  </div>
+
+  <script src="i18n.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
