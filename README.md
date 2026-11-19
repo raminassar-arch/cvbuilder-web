@@ -1,78 +1,143 @@
-# CVBuilder Web v2.5.0 — GitHub Pages build
+# CVBuilder v2.5.0 – wersja Google Sites (statyczna)
 
-A **static, client-side** version of CVBuilder. Copy the files from this `web\` folder
-to the root of a GitHub repository and enable GitHub Pages — no server, no build step,
-no Python and no runtime dependencies.
+Statyczna wersja CVBuildera: **same pliki HTML, CSS i JavaScript**, bez serwera
+i bez Pythona na komputerze użytkownika. Wystarczy dowolny hosting statyczny
+(GitHub Pages, Netlify, Cloudflare Pages, serwer WWW) albo osadzenie w Google
+Sites. CV, list motywacyjny i raport ATS powstają w przeglądarce użytkownika.
 
-## Files
+Wersja desktopowa (`cv_builder.py`, `dist\CVBuilder.exe`) pozostaje nietknięta –
+ten katalog jest całkowicie niezależny.
 
-| File | Purpose |
-|---|---|
-| `index.html` | App shell: language bar, chooser, wizard, manual tabs, outputs, About modal |
-| `styles.css` | Dark theme, RTL layout, responsive rules, print/PDF document themes |
-| `i18n.js` | English / Polish / Arabic translation tables and the `tr()` helper |
-| `app.js` | State, wizard, manual editors, ATS scoring, document builders, downloads |
-| `.nojekyll` | Tells GitHub Pages not to run Jekyll (keeps every file exactly as-is) |
-| `README.md` | These instructions |
+## Adresy publikacji
 
-## Features (parity with the desktop app)
+| Co | Adres |
+| --- | --- |
+| Aplikacja | https://raminassar-arch.github.io/cvbuilder-web/ |
+| Pomocnik osadzania (Google Sites) | https://raminassar-arch.github.io/cvbuilder-web/embed.html |
+| Repozytorium | https://github.com/raminassar-arch/cvbuilder-web |
 
-- Live **EN / PL / AR** switching; the whole interface, generated CV, cover letter and
-  ATS report retranslate immediately. Arabic switches the page to full **RTL**.
-- **Questionnaire (Q&A)** with 10 steps, **Back / Next**, a *Jump to question* selector
-  and a final review screen — plus a **manual tabs** editor for every section.
-- Optional photo and a 1–2 sentence italic role brief above each job's achievements.
-- ATS report: standard headings, dates, bullet quality, length, keyword coverage against
-  a pasted job description, and a score out of 100 with severity-sorted findings.
-- **Document styles**: black & white, green & black, rose & black (colour only — no
-  tables, text boxes or images in the text flow, so ATS parsing is unaffected).
-- Downloads: plain `.txt`, Word-compatible `.doc` (HTML with Word namespaces and CSS),
-  and **Print / Save as PDF** via the browser print dialog.
-- Settings and profile are stored in `localStorage`. **Nothing is uploaded anywhere.**
+Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
 
-## Test locally (optional)
+---
 
-From this folder:
+## Jak to działa
 
-```bat
-python -m http.server 3000
+| Warstwa | Plik | Rola |
+| --- | --- | --- |
+| Interfejs | `index.html`, `styles.css` | ciemny motyw, pełne RTL dla arabskiego, układ responsywny, druk A4 |
+| Tłumaczenia | `i18n.js` | EN / PL / AR (ponad 370 kluczy) i funkcja `tr()` z interpolacją |
+| Logika | `app.js` | stan i `localStorage`, kreator 10 kroków, edytory zakładek, punktacja ATS, dopasowanie słów kluczowych, pobieranie plików |
+| Osadzanie | `embed.html` | pomocnik: gotowy kod iframe dla Google Sites + podgląd |
+| Ikona | `favicon.svg` | znak „CV” w zielono-złotej kolorystyce |
+
+Kluczowa decyzja: **wszystko działa po stronie klienta**. Nie ma wywołań API,
+analizy zewnętrznej ani pobierania bibliotek z CDN – po pierwszym wczytaniu
+aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
+
+---
+
+## Funkcje (zgodność z wersją desktopową)
+
+- Przełączanie **EN / PL / AR** na żywo; interfejs, CV, list motywacyjny i raport
+  ATS tłumaczą się natychmiast. Arabski ustawia układ **RTL**.
+- **Kreator (Q&A)** z 10 kroków: Wstecz / Dalej, skok do pytania i ekran podsumowania
+  oraz **ręczne zakładki** dla każdej sekcji.
+- Opcjonalne zdjęcie i 1–2 zdaniowy opis roli (kursywa) nad osiągnięciami.
+- Raport ATS: standardowe nagłówki, daty, jakość punktów listy, długość, pokrycie słów
+  kluczowych z ogłoszenia oraz wynik 0–100 z listą znalezisk.
+- **Styl dokumentu**: czarno-biały, zielono-czarny, różowo-czarny (tylko kolory – bez
+  tabel, pól tekstowych i obrazów w tekście, żeby ATS czytał treść poprawnie).
+- Pobieranie: zwykły `.txt`, Word-compatible `.doc` (HTML z przestrzeniami nazw Worda)
+  oraz **Drukuj / Zapisz jako PDF** przez okno druku przeglądarki.
+
+---
+
+## Publikacja
+
+### GitHub Pages (najprościej)
+
+1. Utwórz repozytorium, np. `cvbuilder-web`.
+2. Wgraj **całą zawartość katalogu `web\`** do gałęzi `main`
+   (`index.html` musi być w katalogu głównym repozytorium).
+3. W repozytorium: *Settings → Pages → Source: Deploy from a branch*,
+   gałąź `main`, katalog `/ (root)`.
+4. Po chwili program będzie pod adresem
+   `https://twoja-nazwa.github.io/cvbuilder-web/`.
+
+Repository `raminassar-arch/cvbuilder-web` jest już opublikowane – wystarczy
+`git add . && git commit -m "..." && git push` z katalogu `web\`.
+
+### Netlify Drop
+
+1. Wejdź na `app.netlify.com/drop`.
+2. Przeciągnij **katalog `web\`** (nie pojedyncze pliki).
+3. Dostaniesz adres w rodzaju `https://cvbuilder.netlify.app/`.
+
+### Własny serwer
+
+Skopiuj zawartość `web\` do katalogu obsługiwanego przez serwer WWW.
+Wymagania: poprawne typy MIME dla `.html`, `.js`, `.css` i `.svg`
+(typowe hostingu statyczne ustawiają je domyślnie).
+
+### Co wgrywać na hosting
+
+Do działania aplikacji potrzebne są:
+
+```
+index.html
+styles.css
+i18n.js
+app.js
+favicon.svg
+embed.html        (opcjonalnie – pomocnik osadzania)
+.nojekyll         (wymagane przez GitHub Pages)
 ```
 
-Then open <http://localhost:3000/index.html>. Opening `index.html` directly with a
-`file://` URL also works in most browsers, but a local server is closer to GitHub Pages.
+Plik `README.md` jest dokumentacją – nie jest potrzebny do działania aplikacji,
+ale warto go zostawić w repozytorium.
 
-## Publish to GitHub Pages
+---
 
-1. Create a new public repository on GitHub (e.g. `cvbuilder-web`). Do **not** add a
-   README/licence during creation if you want a pristine root.
-2. Copy **all** files from this `web\` folder into the repository root (including the
-   hidden `.nojekyll`). The final repo root should contain:
-   `.nojekyll`, `README.md`, `app.js`, `i18n.js`, `index.html`, `styles.css`.
-3. Commit and push with your own credentials:
+## Osadzenie w Google Sites
 
-   ```bat
-   cd path\to\cvbuilder-web
-   git init
-   git add .
-   git commit -m "CVBuilder web v2.5.0"
-   git branch -M main
-   git remote add origin https://github.com/YOUR_USERNAME/cvbuilder-web.git
-   git push -u origin main
-   ```
+W katalogu jest gotowy pomocnik: **`embed.html`**. Otwórz go z opublikowanego
+adresu (np. `https://raminassar-arch.github.io/cvbuilder-web/embed.html`),
+wklej adres aplikacji, skopiuj wygenerowany kod i w Google Sites użyj
+**Wstaw → Osadź → Kod osadzania**.
 
-4. In the repository, go to **Settings → Pages**. Under *Build and deployment* set
-   **Source: Deploy from a branch**, **Branch: `main`**, **folder: `/ (root)`**, then
-   click **Save**.
-5. After a minute or two the site is live at
-   `https://YOUR_USERNAME.github.io/cvbuilder-web/`.
+Szkielet kodu:
 
-If you prefer to keep the desktop source and the web build in the *same* repository,
-create a branch named `gh-pages` containing only these web files and set **Source:
-Deploy from a branch → gh-pages / (root)** instead.
+```html
+<iframe src="https://raminassar-arch.github.io/cvbuilder-web/"
+        title="CVBuilder v2.5.0 – generator CV ATS (EN/PL/AR)"
+        style="width:100%;height:1000px;border:0;display:block"
+        allow="clipboard-write"></iframe>
+```
 
-## Updating later
+Jeśli opcja „Kod osadzania” nie jest dostępna, użyj **Wstaw → Osadź → Adres URL**
+i wklej tylko `https://raminassar-arch.github.io/cvbuilder-web/`.
 
-Copy the changed web files over the repo copies, then:
+Po wstawieniu rozciągnij blok na całą szerokość i ustaw wysokość ok. 900–1200 px
+(zawartość nie zmienia rozmiaru bloku w Google Sites).
+
+### Ograniczenia osadzenia
+
+* **Pamięć przeglądarki.** Profil i ustawienia (język, tryb, styl dokumentu) są
+  zapisywane w `localStorage`. W części przeglądarek (Safari, tryb prywatny)
+  pamięć jest blokowana dla stron osadzonych w obcej domenie – aplikacja działa,
+  ale dane nie zapisują się między odświeżeniami.
+* **Zalecenie:** w Google Sites umieść przede wszystkim odnośnik „Otwórz CVBuilder”
+  (samodzielna karta), a osadzenie traktuj jako podgląd. Gotowy kod przycisku
+  generuje helper `embed.html` w sekcji 4.
+* Pobrane pliki `.txt` i `.doc` trafiają do folderu pobranych przeglądarki –
+  Google Sites nie pośredniczy w ich zapisie.
+* PDF powstaje przez okno druku przeglądarki („Zapisz jako PDF”).
+
+---
+
+## Aktualizacja
+
+Skopiuj zmienione pliki do katalogu `web\`, po czym z tego katalogu:
 
 ```bat
 git add .
@@ -80,10 +145,23 @@ git commit -m "CVBuilder web update"
 git push
 ```
 
-Pages rebuilds automatically.
+Pages przebuduje stronę automatycznie. Jeśli zmieniłeś `app.js`, `styles.css`,
+`i18n.js` lub `index.html`, pamiętaj o wymuszeniu odświeżenia pamięci podręcznej
+(przez Ctrl+F5 u siebie; odwiedzający dostaną nowe pliki dzięki nagłówkom
+`Cache-Control` GitHub Pages).
 
-## Privacy
+---
 
-All data entry, keyword analysis and document generation happen in your browser via
-JavaScript. There are no network requests, no analytics and no uploads; the profile
-lives only in your browser's `localStorage` unless you export it yourself.
+## Prywatność
+
+Wszystkie dane wprowadzone do formularzy, analiza słów kluczowych i tworzenie
+dokumentów odbywają się w przeglądarce przez JavaScript. Nie ma żadnych żądań
+sieciowych, statystyk ani przesyłania danych; profil żyje wyłącznie w
+`localStorage` przeglądarki, dopóki użytkownik sam go nie wyeksportuje.
+
+---
+
+## Autor
+
+**Rami Nassar**, 2026 · **BIM Architects & Consultants**
+Kontakt: **raminassar.arch@gmail.com**
