@@ -1156,16 +1156,30 @@ async function importReadFile(file) {
   }
 }
 function mergeImportedProfile(imported, replace) {
+  // "Replace" must be a real replacement: start from a blank profile so no
+  // stale values survive in fields the DOCX does not mention (target
+  // company, photo, extra contact lines, old list entries, ...).
+  if (replace) {
+    const fresh = emptyProfile();
+    for (const key of ['name', 'title', 'target_company', 'summary', 'photo'])
+      if (imported[key]) fresh[key] = imported[key];
+    for (const [key, value] of Object.entries(imported.contact || {}))
+      if (value) fresh.contact[key] = value;
+    for (const key of ['skills', 'experience', 'education', 'certifications', 'projects', 'languages'])
+      if ((imported[key] || []).length) fresh[key] = clone(imported[key]);
+    ST.profile = fresh;
+    return;
+  }
   const p = ST.profile;
   if (!p.contact || typeof p.contact !== 'object') p.contact = emptyProfile().contact;
   for (const key of ['name', 'title', 'target_company', 'summary'])
-    if (imported[key] && (replace || !p[key])) p[key] = imported[key];
+    if (imported[key] && !p[key]) p[key] = imported[key];
   for (const [key, value] of Object.entries(imported.contact || {}))
-    if (value && (replace || !p.contact[key])) p.contact[key] = value;
+    if (value && !p.contact[key]) p.contact[key] = value;
   for (const key of ['skills', 'experience', 'education', 'certifications', 'projects', 'languages']) {
     const incoming = imported[key] || [];
     if (!incoming.length) continue;
-    if (replace || !(p[key] || []).length) p[key] = clone(incoming);
+    if (!(p[key] || []).length) p[key] = clone(incoming);
     else {
       const have = new Set((p[key] || []).map((x) => JSON.stringify(x)));
       for (const item of incoming) {
@@ -1178,11 +1192,19 @@ function mergeImportedProfile(imported, replace) {
 function importApply() {
   if (!IMPORT_PROFILE) { importSetStatus('importNoFile', 'warn'); return; }
   const fields = importFieldSummary(IMPORT_PROFILE);
+  const fromChooser = !!($('#pane-chooser') && $('#pane-chooser').classList.contains('active'));
   mergeImportedProfile(IMPORT_PROFILE, $('#import-replace').checked);
   saveLocal();
+  buildOutputs(false, true);
   renderWizard();
   renderTabs();
-  if (ST.report) buildOutputs(false, true);
+  // Importing from the first screen must land on the filled form, otherwise
+  // the user stays on the chooser and thinks nothing changed.
+  if (fromChooser) {
+    const dontAsk = $('#dont-ask');
+    if (dontAsk) ST.settings.dont_ask = dontAsk.checked;
+    setMode('tabs', true);
+  }
   $('#import-modal').hidden = true;
   const bar = $('#import-done');
   if (bar) {
