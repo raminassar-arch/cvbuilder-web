@@ -1486,11 +1486,12 @@ async function importReadFile(file) {
     const isPdf = /\.pdf$/i.test(file.name), isDocx = /\.docx$/i.test(file.name);
     if (!isPdf && !isDocx) throw new Error(T('importBadExt'));
     const lines = isPdf ? pdfLines(await file.arrayBuffer()) : docxLines(await file.arrayBuffer());
-    if (!lines.length) throw new Error(T('importEmptyDoc'));
+    if (!lines.length) throw new Error(T(isPdf ? 'importPdfNoText' : 'importEmptyDoc'));
     IMPORT_PROFILE = parseDocxProfile(lines);
     const fields = importFieldSummary(IMPORT_PROFILE);
-    importSetStatus(importHasFields(IMPORT_PROFILE) ? 'importReady' : 'importNothing',
-      importHasFields(IMPORT_PROFILE) ? '' : 'warn', { file: file.name, fields });
+    const hasFields = importHasFields(IMPORT_PROFILE);
+    importSetStatus(hasFields ? 'importReady' : (isPdf ? 'importNothingPdf' : 'importNothing'),
+      hasFields ? '' : 'warn', { file: file.name, fields });
     $('#import-apply').disabled = !importHasFields(IMPORT_PROFILE);
   } catch (e) {
     IMPORT_PROFILE = null;
@@ -1558,9 +1559,13 @@ function importApply() {
     IMPORT_DONE_TIMER = setTimeout(() => { bar.hidden = true; }, 9000);
   }
 }
-function openImport() {
+function openImport(evt) {
   IMPORT_FILE = null;
   IMPORT_PROFILE = null;
+  // The scan/OCR warning belongs to PDF imports; keep the DOCX dialog tidy.
+  const note = $('#import-pdf-note');
+  const source = evt && evt.currentTarget ? evt.currentTarget.id : '';
+  if (note) note.hidden = source === 'choose-docx';
   $('#import-zone').classList.remove('dragover');
   const fn = $('#import-filename');
   if (fn) { fn.textContent = ''; fn.hidden = true; }
@@ -2041,6 +2046,10 @@ const WEB_TEXT = {
     en: 'Choose a Word .docx or text-based PDF CV. Its text is read locally in your browser and matched to the form fields. Nothing is uploaded. Scanned/image-only PDFs cannot be read.',
     pl: 'Wybierz CV w formacie Word .docx lub PDF z warstwą tekstu. Tekst jest odczytywany lokalnie w przeglądarce i dopasowywany do pól formularza. Nic nie jest wysyłane. Skany i same obrazy nie mogą być odczytane.',
     ar: 'اختر سيرة ذاتية بصيغة Word .docx أو PDF تحتوي على طبقة نص. تتم قراءة النص محلياً في متصفحك ومطابقته مع حقول النموذج. لا يتم رفع أي شيء. لا يمكن قراءة ملفات PDF الممسوحة ضوئياً.' },
+  pdfImportNote: {
+    en: 'PDF note: only PDFs with a text layer can be read. For scans or image-only files, run OCR first or paste text extracted by an AI assistant.',
+    pl: 'Uwaga do PDF: odczytujemy tylko PDF-y z warstwą tekstu. Skany i pliki tylko z obrazem wymagają OCR lub wklejenia tekstu wyciągniętego przez asystenta AI.',
+    ar: 'ملاحظة PDF: يمكن قراءة ملفات PDF التي تحتوي على طبقة نص فقط. أما الممسوحة ضوئياً أو التي تحتوي صوراً فقط فتحتاج إلى OCR أو لصق النص المستخرج بواسطة مساعد ذكي.' },
   importDrop: {
     en: 'Drop a .docx or .pdf file here, or click to browse',
     pl: 'Upuść plik .docx lub .pdf tutaj lub kliknij, aby wybrać',
@@ -2064,12 +2073,20 @@ const WEB_TEXT = {
   importEmptyDoc: {
     en: 'The document has no readable text.', pl: 'Dokument nie zawiera tekstu do odczytania.',
     ar: 'لا يحتوي المستند على نص يمكن قراءته.' },
+  importPdfNoText: {
+    en: 'No text layer found. This looks like a scan or image-only PDF. Use OCR or paste text from an AI assistant, then import the extracted text as a DOCX.',
+    pl: 'Nie znaleziono warstwy tekstu. Wygląda na skan lub PDF tylko z obrazem. Użyj OCR lub wklej tekst z asystenta AI, a następnie zaimportuj wyciągnięty tekst jako DOCX.',
+    ar: 'لم يتم العثور على طبقة نص. يبدو أن هذا ملف ممسوح ضوئياً أو يحتوي صوراً فقط. استخدم OCR أو الصق نصاً من مساعد ذكي، ثم استورد النص المستخرج كملف DOCX.' },
   importNothingShort: {
     en: 'no recognised fields', pl: 'brak rozpoznanych pól', ar: 'لا توجد حقول معروفة' },
   importNothing: {
     en: 'No recognisable fields found in {file}. Use a Word .docx or text-based PDF with standard CV headings.',
     pl: 'Nie znaleziono rozpoznawalnych pól w pliku {file}. Użyj Word .docx lub PDF z warstwą tekstu i standardowymi nagłówkami CV.',
     ar: 'لم يتم العثور على حقول معروفة في {file}. استخدم Word .docx أو PDF مع طبقة نص بعناوين سيرة ذاتية قياسية.' },
+  importNothingPdf: {
+    en: 'No CV fields found in {file}. Only text-based PDFs can be read; for scans use OCR or text from an AI assistant.',
+    pl: 'Nie znaleziono pól CV w pliku {file}. Odczytujemy tylko PDF-y z warstwą tekstu; dla skanów użyj OCR lub tekstu od asystenta AI.',
+    ar: 'لم يتم العثور على حقول سيرة ذاتية في {file}. يمكن قراءة ملفات PDF التي تحتوي على طبقة نص فقط؛ للمسوحات استخدم OCR أو نصاً من مساعد ذكي.' },
   importApplied: {
     en: 'Document imported: {fields}. Review the fields before generating.',
     pl: 'Zaimportowano dokument: {fields}. Sprawdź pola przed wygenerowaniem.',

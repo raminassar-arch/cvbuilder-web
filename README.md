@@ -56,9 +56,10 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
   **Zastąp istniejące pola**; po odznaczeniu puste pola są uzupełniane, a nowe
   wpisy listy dodawane bez usuwania poprzednich. Po imporcie od razu przechodzisz
   do wypełnionych zakładek. Statusy i komunikaty o błędach są przetłumaczone na
-  EN/PL/AR. Plik jest analizowany wyłącznie w przeglądarce — bez przesyłania,
-  bibliotek i serwera. PDF musi mieć warstwę tekstu; skany i same obrazy nie
-  mogą być odczytane.
+  EN/PL/AR. W oknie importu PDF wyświetlana jest wskazówka o ograniczeniu: plik
+  musi mieć warstwę tekstu; skany i same obrazy nie mogą być odczytane — najpierw
+  użyj OCR lub wklej tekst wyciągnięty np. przez asystenta AI. Plik jest analizowany
+  wyłącznie w przeglądarce — bez przesyłania, bibliotek i serwera.
 - **Ostatni ekran ma jeden przycisk `Generuj`.** Najpierw wybierasz styl dokumentu,
   potem zaznaczasz format(y): **PDF** i/lub **Word (`.doc`)** – pliki `.txt` nie są
   już oferowane. Po kliknięciu `Generuj` powstają zaznaczone pliki:

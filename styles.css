@@ -272,6 +272,12 @@ html[dir="rtl"] .preview { font-family: "Segoe UI", Tahoma, sans-serif; directio
 .import-zone:hover, .import-zone.dragover { border-color: var(--gold); background: var(--sel); color: var(--fg); }
 .import-zone-icon { font-size: 2rem; line-height: 1; }
 .import-filename { color: var(--green); font-weight: 600; font-size: .9rem; margin: 0 0 6px; word-break: break-all; }
+.import-note {
+  margin: 0 0 10px; padding: 8px 12px; border-inline-start: 3px solid var(--gold);
+  border-radius: 6px; background: var(--panel-2); color: var(--gold);
+  font-size: .85rem; line-height: 1.4;
+}
+.import-note[hidden] { display: none; }
 .import-status { margin: 12px 0 0; font-size: .9rem; color: var(--green); }
 .import-status.warn { color: var(--gold); }
 .import-status.error { color: var(--danger); }
