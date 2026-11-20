@@ -24,6 +24,7 @@
           <button type="button" class="lang-btn" data-lang="pl" title="Polski">PL</button>
           <button type="button" class="lang-btn" data-lang="ar" title="العربية">AR</button>
         </div>
+        <button type="button" id="import-btn" class="ghost-btn" data-i18n="importDocx">Import DOCX</button>
         <button type="button" id="mode-toggle" class="ghost-btn" data-i18n="switchMode">Fill by tabs instead</button>
         <button type="button" id="about-btn" class="ghost-btn" data-i18n="about">About</button>
       </nav>
@@ -31,6 +32,7 @@
   </header>
 
   <main class="app-main">
+    <p id="import-done" class="import-done" role="status" hidden></p>
     <!-- ============ MODE CHOOSER ============ -->
     <section id="pane-chooser" class="pane active" aria-labelledby="chooser-title">
       <div class="card chooser-card">
@@ -154,6 +156,28 @@
       <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
       <h2 id="about-modal-title">CVBuilder v2.5.0</h2>
       <p id="about-body"></p>
+    </div>
+  </div>
+
+  <!-- DOCX import dialog: parsing happens locally, no file ever leaves the browser -->
+  <div id="import-modal" class="modal" hidden>
+    <div class="modal-backdrop" data-close-import></div>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
+      <button type="button" class="modal-close" data-close-import aria-label="Close">&times;</button>
+      <h2 id="import-modal-title" data-i18n="importTitle">Fill the form from a DOCX file</h2>
+      <p class="muted" data-i18n="importHint">Choose a Word .docx CV. Its text is read locally in your browser and matched to the form fields. Nothing is uploaded.</p>
+      <label id="import-zone" class="import-zone" for="import-file">
+        <span class="import-zone-icon">&#128196;</span>
+        <span data-i18n="importDrop">Drop a .docx file here, or click to browse</span>
+        <input type="file" id="import-file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+      </label>
+      <p id="import-filename" class="import-filename" hidden></p>
+      <label class="checkbox-row"><input type="checkbox" id="import-replace" checked> <span data-i18n="importReplace">Replace existing entries</span></label>
+      <div class="download-row">
+        <button type="button" id="import-apply" class="btn primary" data-i18n="importApply">Fill fields</button>
+        <button type="button" class="btn ghost" data-close-import data-i18n="Cancel">Cancel</button>
+      </div>
+      <p id="import-status" class="import-status" role="status" hidden></p>
     </div>
   </div>
 

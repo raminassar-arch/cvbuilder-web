@@ -120,6 +120,416 @@ function splitLines(v) {
   return String(v || '').split('\n').map((x) => x.trim()).filter(Boolean);
 }
 
+/* ------------------------------------------------- DOCX import (zip + XML) */
+/* A .docx is a ZIP archive. These two small routines read word/document.xml
+   directly in the browser: no library, no CDN, no upload, no build step.
+   inflateRaw is a compact raw-DEFLATE decoder (stored / fixed / dynamic blocks). */
+function inflateRaw(data) {
+  const LBASE = [3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,43,51,59,67,83,99,115,131,163,195,227,258];
+  const LEXT = [0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0];
+  const DBASE = [1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,
+    1025,1537,2049,3073,4097,6145,8193,12289,16385,24577];
+  const DEXT = [0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13];
+  let pos = 0, bitBuf = 0, bitCnt = 0;
+
+  function bits(n) {
+    if (!n) return 0;
+    while (bitCnt < n) {
+      if (pos >= data.length) throw new Error('Truncated DOCX data');
+      bitBuf |= data[pos++] << bitCnt;
+      bitCnt += 8;
+    }
+    const v = bitBuf & ((1 << n) - 1);
+    bitBuf >>>= n;
+    bitCnt -= n;
+    return v;
+  }
+  function tree(lengths) {
+    let max = 0;
+    for (const l of lengths) if (l > max) max = l;
+    const counts = new Array(max + 1).fill(0);
+    for (const l of lengths) if (l) counts[l]++;
+    let code = 0;
+    const next = new Array(max + 1).fill(0);
+    for (let l = 1; l <= max; l++) { code = (code + counts[l - 1]) << 1; next[l] = code; }
+    const map = new Map();
+    for (let i = 0; i < lengths.length; i++) {
+      const l = lengths[i];
+      if (!l) continue;
+      map.set(l * 65536 + next[l], i);
+      next[l]++;
+    }
+    return { map, max };
+  }
+  function symbol(t) {
+    let code = 0;
+    for (let l = 1; l <= t.max; l++) {
+      code = (code << 1) | bits(1);
+      const s = t.map.get(l * 65536 + code);
+      if (s !== undefined) return s;
+    }
+    throw new Error('Invalid DOCX data');
+  }
+
+  const out = [];
+  for (;;) {
+    const last = bits(1), type = bits(2);
+    if (type === 0) {
+      bitBuf = 0; bitCnt = 0;
+      const len = data[pos] | (data[pos + 1] << 8);
+      const nlen = data[pos + 2] | (data[pos + 3] << 8);
+      if ((len ^ 0xffff) !== nlen || pos + 4 + len > data.length)
+        throw new Error('Corrupt DOCX block');
+      pos += 4;
+      for (let i = 0; i < len; i++) out.push(data[pos++]);
+    } else if (type === 1 || type === 2) {
+      let litLen, distLen;
+      if (type === 1) {
+        litLen = new Array(288);
+        for (let i = 0; i < 144; i++) litLen[i] = 8;
+        for (let i = 144; i < 256; i++) litLen[i] = 9;
+        for (let i = 256; i < 280; i++) litLen[i] = 7;
+        for (let i = 280; i < 288; i++) litLen[i] = 8;
+        distLen = new Array(30).fill(5);
+      } else {
+        const hlit = bits(5) + 257, hdist = bits(5) + 1, hclen = bits(4) + 4;
+        const order = [16,17,18,0,8,7,9,6,10,5,11,4,12,3,13,2,14,1,15];
+        const cl = new Array(19).fill(0);
+        for (let i = 0; i < hclen; i++) cl[order[i]] = bits(3);
+        const clTree = tree(cl);
+        const lens = new Array(hlit + hdist).fill(0);
+        let i = 0;
+        while (i < lens.length) {
+          const s = symbol(clTree);
+          if (s < 16) lens[i++] = s;
+          else if (s === 16) {
+            const prev = lens[i - 1], n = 3 + bits(2);
+            for (let j = 0; j < n; j++) lens[i++] = prev;
+          } else if (s === 17) {
+            const n = 3 + bits(3);
+            for (let j = 0; j < n; j++) lens[i++] = 0;
+          } else {
+            const n = 11 + bits(7);
+            for (let j = 0; j < n; j++) lens[i++] = 0;
+          }
+        }
+        litLen = lens.slice(0, hlit);
+        distLen = lens.slice(hlit);
+      }
+      const lt = tree(litLen), dt = tree(distLen);
+      for (;;) {
+        const s = symbol(lt);
+        if (s < 256) out.push(s);
+        else if (s === 256) break;
+        else {
+          const li = s - 257;
+          if (li < 0 || li >= LBASE.length) throw new Error('Invalid DOCX length');
+          const len = LBASE[li] + bits(LEXT[li]);
+          const ds = symbol(dt);
+          if (ds >= DBASE.length) throw new Error('Invalid DOCX distance');
+          const dist = DBASE[ds] + bits(DEXT[ds]);
+          if (dist > out.length) throw new Error('Invalid DOCX back-reference');
+          for (let j = 0; j < len; j++) out.push(out[out.length - dist]);
+        }
+      }
+    } else throw new Error('Unsupported DOCX compression');
+    if (last) break;
+  }
+  return new Uint8Array(out);
+}
+
+function zipMember(bytes, name) {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let eocd = -1;
+  const floor = Math.max(0, bytes.length - 65558);
+  for (let i = bytes.length - 22; i >= floor; i--) {
+    if (view.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  }
+  if (eocd < 0) throw new Error('Not a valid DOCX (ZIP) file');
+  const count = view.getUint16(eocd + 10, true);
+  let off = view.getUint32(eocd + 16, true);
+  const dec = new TextDecoder('utf-8');
+  for (let i = 0; i < count; i++) {
+    if (off + 46 > bytes.length || view.getUint32(off, true) !== 0x02014b50)
+      throw new Error('Corrupt DOCX index');
+    const method = view.getUint16(off + 10, true);
+    const csize = view.getUint32(off + 20, true);
+    const nlen = view.getUint16(off + 28, true);
+    const elen = view.getUint16(off + 30, true);
+    const clen = view.getUint16(off + 32, true);
+    const local = view.getUint32(off + 42, true);
+    const fname = dec.decode(bytes.subarray(off + 46, off + 46 + nlen));
+    if (fname === name) {
+      if (local + 30 > bytes.length || view.getUint32(local, true) !== 0x04034b50)
+        throw new Error('Corrupt DOCX entry');
+      const ln = view.getUint16(local + 26, true), le = view.getUint16(local + 28, true);
+      const start = local + 30 + ln + le;
+      const raw = bytes.subarray(start, start + csize);
+      if (method === 0) return raw;
+      if (method === 8) return inflateRaw(raw);
+      throw new Error('Unsupported DOCX compression: ' + method);
+    }
+    off += 46 + nlen + elen + clen;
+  }
+  throw new Error('DOCX is missing ' + name);
+}
+
+function docxLines(buffer) {
+  const xmlBytes = zipMember(new Uint8Array(buffer), 'word/document.xml');
+  const xml = new TextDecoder('utf-8').decode(xmlBytes);
+  const doc = new DOMParser().parseFromString(xml, 'application/xml');
+  if (!doc || doc.getElementsByTagName('parsererror').length)
+    throw new Error('Invalid document XML');
+  const out = [];
+  for (const p of Array.from(doc.getElementsByTagNameNS('*', 'p'))) {
+    let s = '';
+    for (const t of Array.from(p.getElementsByTagNameNS('*', 't'))) s += t.textContent || '';
+    s = s.replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!s) continue;
+    let style = '';
+    const st = p.getElementsByTagNameNS('*', 'pStyle')[0];
+    if (st) style = st.getAttributeNS('*', 'val') || '';
+    const numbered = p.getElementsByTagNameNS('*', 'numPr').length > 0;
+    if ((numbered || /list/i.test(style)) && !/^[-•*·▪]\s+/.test(s)) s = '- ' + s;
+    out.push(s);
+  }
+  return out;
+}
+
+const IMPORT_MONTH = {
+  jan:'Jan', feb:'Feb', mar:'Mar', apr:'Apr', may:'May', jun:'Jun', jul:'Jul', aug:'Aug',
+  sep:'Sep', sept:'Sep', oct:'Oct', nov:'Nov', dec:'Dec',
+  sty:'Jan', lut:'Feb', kwi:'Apr', maj:'May', cze:'Jun', lip:'Jul', sie:'Aug',
+  wrz:'Sep', paz:'Oct', 'paź':'Oct', lis:'Nov', gru:'Dec'
+};
+const IMPORT_MONTH_RE = '(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec|'
+  + 'Sty|Lut|Mar|Kwi|Maj|Cze|Lip|Sie|Wrz|Paz|Paź|Lis|Gru)[a-z]*\\.?';
+const IMPORT_TITLE_RE = /\b(engineer|developer|architect|designer|manager|consultant|analyst|director|lead|specialist|officer|assistant|technician|scientist|administrator|supervisor|coordinator|intern|trainee|professor|teacher|nurse|accountant|bim|cad|software|project|senior|junior|inżynier|architekt|menedżer|specjalista|kierownik)\b/i;
+const IMPORT_SCHOOL_RE = /\b(university|college|school|institute|technikum|uczelnia|uniwersytet|wyższa)\b/i;
+const IMPORT_DEGREE_RE = /\b(bachelor|master|phd|doctor|diploma|bsc|msc|mba|degree|licencjat|magister|inżynier|doktor)\b/i;
+const IMPORT_LOC_RE = /([A-Za-zÀ-ÿ][\w.'À-ÿ-]*(?: [A-Za-zÀ-ÿ][\w.'À-ÿ-]*){0,3},\s*[A-Za-zÀ-ÿ][\w.'À-ÿ-]*(?: [A-Za-zÀ-ÿ][\w.'À-ÿ-]*){0,2})/;
+const IMPORT_YEAR_RE = /(?:19|20)\d{2}/g;
+const IMPORT_URL_RE = /(?:https?:\/\/|www\.|linkedin\.com|github\.com|@)/i;
+
+function parseDateSpans(s) {
+  const re = new RegExp('\\b(?:(?<mon>' + IMPORT_MONTH_RE + ')\\s+(?<yr>\\d{4})'
+    + '|(?<yr2>(?:19|20)\\d{2})|(?<now>Present|Current|Ongoing|Today|Now|Obecnie|Teraz))\\b', 'gi');
+  const spans = [], tokens = [];
+  let m;
+  while ((m = re.exec(s))) {
+    const mon = m.groups.mon ? IMPORT_MONTH[String(m.groups.mon).slice(0, 3).toLowerCase()] : '';
+    tokens.push(mon ? mon + ' ' + m.groups.yr : (m.groups.yr2 || 'Present'));
+    spans.push([m.index, m.index + m[0].length]);
+  }
+  let start = '', end = '';
+  if (tokens.length >= 2) {
+    start = tokens[0] === 'Present' ? '' : tokens[0];
+    end = tokens[tokens.length - 1];
+  } else if (tokens.length === 1) {
+    if (tokens[0] === 'Present') end = 'Present'; else start = tokens[0];
+  }
+  let clean = '', at = 0;
+  for (const [a, b] of spans) { clean += s.slice(at, a); at = b; }
+  clean += s.slice(at);
+  clean = clean.replace(/\s+[-–—]\s+|\s{2,}/g, ' ')
+    .replace(/^[\s,|–—-]+|[\s,|–—-]+$/g, '').trim();
+  return { start, end, clean };
+}
+
+function importHeadingKey(line) {
+  const s = normalize(line).replace(/:$/, '').trim();
+  if (!s || s.length > 40) return null;
+  const low = s.toLowerCase();
+  if (KNOWN[low]) return KNOWN[low];
+  if (s === s.toUpperCase() && low.split(/\s+/).length <= 5) {
+    for (const [phrase, key] of Object.entries(KNOWN)) {
+      if (phrase.split(/\s+/).every((w) => low.includes(w))) return key;
+    }
+  }
+  return null;
+}
+
+function importSplitParts(s) {
+  let parts;
+  if (s.includes('|')) parts = s.split(/\s*\|\s*/);
+  else if (/\s+[-–—]\s+/.test(s)) parts = s.split(/\s+[-–—]\s+/);
+  else if ((s.match(/,/g) || []).length <= 3) parts = s.split(/\s*,\s*/);
+  else parts = [s];
+  return parts.map((x) => x.trim()).filter(Boolean);
+}
+
+function importParseHeader(lines) {
+  const out = { name: '', title: '', contact: { location: '', phone: '', email: '', linkedin: '', portfolio: '' } };
+  const text = lines.join('\n');
+  const email = text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/);
+  if (email) out.contact.email = email[0];
+  const li = text.match(/(?:https?:\/\/)?(?:www\.)?linkedin\.com\/[^\s|]+/i);
+  if (li) out.contact.linkedin = li[0].replace(/[.,;]+$/, '');
+  const ph = text.match(/(?:\+?\d[\d ().-]{6,}\d)/);
+  if (ph && ph[0].replace(/\D/g, '').length >= 7) out.contact.phone = ph[0].trim();
+  const loc = text.match(IMPORT_LOC_RE);
+  if (loc) out.contact.location = loc[1].trim();
+  const web = text.match(/(?:https?:\/\/)?(?:www\.)?(?:github\.com|gitlab\.com|[^\s]+\.(?:io|dev|me|net|org))\/[^\s|]+/i);
+  if (web && !/linkedin/i.test(web[0])) out.contact.portfolio = web[0].replace(/[.,;]+$/, '');
+  let cleaned = text;
+  for (const token of [email && email[0], li && li[0], ph && ph[0], loc && loc[1], web && web[0]])
+    if (token) cleaned = cleaned.split(token).join(' ');
+  const parts = [];
+  for (const line of cleaned.split('\n')) {
+    for (const bit of line.split(/\s*[|•·]\s*/)) {
+      const v = bit.replace(/^[\s,–—-]+|[\s,–—-]+$/g, '').trim();
+      if (v && !/^(curriculum vitae|cv)$/i.test(v) && !IMPORT_URL_RE.test(v)) parts.push(v);
+    }
+  }
+  if (parts.length) {
+    out.name = parts[0];
+    const rest = parts.slice(1);
+    if (rest.length) out.title = rest.find((p) => IMPORT_TITLE_RE.test(p)) || rest[0];
+  }
+  return out;
+}
+
+function importExpHeader(line) {
+  const d = parseDateSpans(line);
+  let parts = importSplitParts(d.clean);
+  let location = '';
+  parts = parts.map((p) => {
+    const m = p.match(IMPORT_LOC_RE);
+    if (!m) return p;
+    location = m[1].trim();
+    return p.replace(m[1], ' ').replace(/^[\s,|–—-]+|[\s,|–—-]+$/g, '').trim();
+  }).filter(Boolean);
+  let title = '', company = '';
+  if (parts.length >= 3) {
+    title = parts[0]; company = parts[1];
+    if (!location && parts[2].length < 40) location = parts[2];
+  } else if (parts.length === 2) {
+    if (IMPORT_TITLE_RE.test(parts[0])) { title = parts[0]; company = parts[1]; }
+    else if (IMPORT_TITLE_RE.test(parts[1])) { title = parts[1]; company = parts[0]; }
+    else { title = parts[0]; company = parts[1]; }
+  } else if (parts.length === 1) {
+    if (IMPORT_TITLE_RE.test(parts[0]) || parts[0].split(/\s+/).length <= 5) title = parts[0];
+    else company = parts[0];
+  }
+  return { title, company, location, start: d.start, end: d.end, about: '', bullets: [] };
+}
+
+function parseDocxProfile(lines) {
+  const sections = { header: [] };
+  let cur = 'header';
+  for (const line of lines) {
+    const key = importHeadingKey(line);
+    if (key) { cur = key; if (!sections[key]) sections[key] = []; continue; }
+    if (!sections[cur]) sections[cur] = [];
+    sections[cur].push(line);
+  }
+  const p = emptyProfile();
+  const head = importParseHeader(sections.header || []);
+  p.name = head.name; p.title = head.title; p.contact = head.contact;
+
+  p.summary = (sections.summary || []).join('\n').trim();
+
+  const seenSkills = new Set();
+  for (const line of (sections.skills || [])) {
+    for (const bit of line.split(/[,;|•·]|\s{2,}|\s+-\s+/)) {
+      const s = bit.replace(/^[\s–—-]+|[\s–—-]+$/g, '').trim();
+      if (s.length < 2 || s.length > 60 || seenSkills.has(s.toLowerCase())) continue;
+      seenSkills.add(s.toLowerCase());
+      p.skills.push(s);
+    }
+  }
+
+  let exp = null, sawBullet = false;
+  for (const raw of (sections.experience || [])) {
+    let s = String(raw).trim();
+    const bullet = /^[-•*·▪]\s+/.test(s);
+    if (bullet) s = s.replace(/^[-•*·▪]\s+/, '').trim();
+    if (!s) continue;
+    if (bullet) {
+      if (!exp) { exp = importExpHeader(''); p.experience.push(exp); }
+      exp.bullets.push(s); sawBullet = true; continue;
+    }
+    const d = parseDateSpans(s);
+    const hasDate = !!(d.start || d.end);
+    const sentence = s.length > 55 || /[.!?]$/.test(s);
+    if (!exp || hasDate || (sawBullet && !sentence)) {
+      exp = importExpHeader(s); p.experience.push(exp); sawBullet = false;
+    } else exp.about = (exp.about ? exp.about + ' ' : '') + s;
+  }
+
+  let edu = null;
+  for (const raw of (sections.education || [])) {
+    let s = String(raw).trim();
+    const bullet = /^[-•*·▪]\s+/.test(s);
+    if (bullet) s = s.replace(/^[-•*·▪]\s+/, '').trim();
+    if (!s) continue;
+    const d = parseDateSpans(s);
+    const parts = importSplitParts(d.clean);
+    const isDetail = !!edu && (bullet || (!d.start && !d.end && parts.length === 1));
+    if (!edu || d.start || d.end || (!isDetail && edu.degree && edu.school)) {
+      edu = { degree: '', school: '', location: '', start: d.start, end: d.end, details: '' };
+      p.education.push(edu);
+    }
+    if (isDetail) {
+      edu.details = (edu.details ? edu.details + ' ' : '') + s;
+    } else if (parts.length >= 2) {
+      if (!edu.degree) edu.degree = parts[0];
+      if (!edu.school) edu.school = parts[1];
+      if (parts[2] && parts[2].length < 40) edu.location = parts[2];
+    } else if (parts.length === 1) {
+      if (!edu.degree && (IMPORT_DEGREE_RE.test(parts[0]) || !IMPORT_SCHOOL_RE.test(parts[0]))) edu.degree = parts[0];
+      else if (!edu.school) edu.school = parts[0];
+      else edu.details = (edu.details ? edu.details + ' ' : '') + s;
+    }
+  }
+
+  for (const raw of (sections.certifications || [])) {
+    let s = String(raw).replace(/^[-•*·▪]\s+/, '').trim();
+    if (!s) continue;
+    const years = s.match(IMPORT_YEAR_RE) || [];
+    const year = years.length ? years[years.length - 1] : '';
+    s = s.replace(new RegExp(IMPORT_YEAR_RE.source, 'g'), ' ').trim();
+    let bits;
+    if (s.includes('|')) bits = s.split(/\s*\|\s*/);
+    else if (/\s+[-–—]\s+/.test(s)) bits = s.split(/\s+[-–—]\s+/);
+    else bits = [s];
+    bits = bits.map((b) => b.replace(/\s{2,}/g, ' ').replace(/^[\s,|]+|[\s,|]+$/g, '').trim())
+      .filter(Boolean);
+    p.certifications.push({ name: bits[0] || '', issuer: bits[1] || '', year });
+  }
+
+  for (const raw of (sections.projects || [])) {
+    let s = String(raw).replace(/^[-•*·▪]\s+/, '').trim();
+    if (!s) continue;
+    let tech = [];
+    const tm = s.match(/(?:Tech|Technologies|Stack)\s*:\s*(.+)$/i) || s.match(/\(([^)]+)\)\s*$/);
+    if (tm) { tech = splitComma(tm[1]); s = s.slice(0, tm.index).trim(); }
+    const bits = s.includes('|') ? s.split(/\s*\|\s*/) : s.split(/\s+[-–—]\s+/);
+    const item = {
+      name: bits[0] ? bits[0].trim() : '',
+      description: bits.slice(1).map((b) => b.trim()).filter(Boolean).join(' - '),
+      tech
+    };
+    if (item.name) p.projects.push(item);
+  }
+
+  for (const raw of (sections.languages || [])) {
+    const s = String(raw).replace(/^[-•*·▪]\s+/, '').trim();
+    if (!s) continue;
+    let name = s, level = '';
+    const paren = s.match(/^(.+?)\s*\(([^)]+)\)\s*$/);
+    if (paren) { name = paren[1]; level = paren[2]; }
+    else {
+      const i = s.search(/[:\-–—,]/);
+      if (i > 0) { name = s.slice(0, i); level = s.slice(i + 1); }
+    }
+    name = name.trim();
+    level = level.replace(/^[-\s:–—,]+|[\s()]+$/g, '').trim();
+    if (name) p.languages.push({ name, level });
+  }
+  return p;
+}
+
 /* -------------------------------------------------------------- constants */
 const STOPWORDS = new Set(`a an the and or but if then than that this these those with without within for from into onto
 to of in on at by as is are was were be been being am do does did doing done have has had having will would shall
@@ -686,6 +1096,116 @@ function letterBody(p, text) {
     + `<div class="letter-body">${esc(text)}</div>`;
 }
 
+/* --------------------------------------------------------- DOCX import UI */
+let IMPORT_FILE = null, IMPORT_PROFILE = null, IMPORT_STATUS = null, IMPORT_DONE_TIMER = null, IMPORT_DONE_FIELDS = '';
+
+function importHasFields(p) {
+  return !!(p.name || p.title || p.summary || p.contact.email || p.contact.phone
+    || p.contact.location || (p.skills || []).length || (p.experience || []).length
+    || (p.education || []).length || (p.certifications || []).length
+    || (p.projects || []).length || (p.languages || []).length);
+}
+function importFieldSummary(p) {
+  const bits = [];
+  if (p.name) bits.push(T('Full name'));
+  if (p.title) bits.push(T('Job title'));
+  if (p.contact.location) bits.push(T('Location'));
+  if (p.contact.phone) bits.push(T('Phone'));
+  if (p.contact.email) bits.push(T('Email'));
+  if (p.summary) bits.push(T('Professional Summary - 2-3 sentences with your top keywords').split(' - ')[0]);
+  if ((p.skills || []).length) bits.push(`${T('Skills')} (${p.skills.length})`);
+  if ((p.experience || []).length) bits.push(`${T('Work experience')} (${p.experience.length})`);
+  if ((p.education || []).length) bits.push(`${T('Education')} (${p.education.length})`);
+  if ((p.certifications || []).length) bits.push(`${T('Certifications')} (${p.certifications.length})`);
+  if ((p.projects || []).length) bits.push(`${T('Projects')} (${p.projects.length})`);
+  if ((p.languages || []).length) bits.push(`${T('Languages')} (${p.languages.length})`);
+  return bits.join(', ') || T('importNothingShort');
+}
+function importSetStatus(key, cls, vars) {
+  IMPORT_STATUS = { key, cls: cls || '', vars: vars || {} };
+  const el = $('#import-status');
+  if (!el) return;
+  el.textContent = T(key, IMPORT_STATUS.vars);
+  el.className = 'import-status' + (IMPORT_STATUS.cls ? ' ' + IMPORT_STATUS.cls : '');
+  el.hidden = false;
+}
+function importClearStatus() {
+  IMPORT_STATUS = null;
+  const el = $('#import-status');
+  if (el) { el.textContent = ''; el.hidden = true; }
+}
+async function importReadFile(file) {
+  IMPORT_FILE = file;
+  IMPORT_PROFILE = null;
+  $('#import-filename').textContent = file.name;
+  $('#import-filename').hidden = false;
+  $('#import-apply').disabled = true;
+  try {
+    if (!/\.docx$/i.test(file.name)) throw new Error(T('importBadExt'));
+    const lines = docxLines(await file.arrayBuffer());
+    if (!lines.length) throw new Error(T('importEmptyDoc'));
+    IMPORT_PROFILE = parseDocxProfile(lines);
+    const fields = importFieldSummary(IMPORT_PROFILE);
+    importSetStatus(importHasFields(IMPORT_PROFILE) ? 'importReady' : 'importNothing',
+      importHasFields(IMPORT_PROFILE) ? '' : 'warn', { file: file.name, fields });
+    $('#import-apply').disabled = !importHasFields(IMPORT_PROFILE);
+  } catch (e) {
+    IMPORT_PROFILE = null;
+    importSetStatus('importError', 'error',
+      { error: e && e.message ? e.message : String(e) });
+  }
+}
+function mergeImportedProfile(imported, replace) {
+  const p = ST.profile;
+  if (!p.contact || typeof p.contact !== 'object') p.contact = emptyProfile().contact;
+  for (const key of ['name', 'title', 'target_company', 'summary'])
+    if (imported[key] && (replace || !p[key])) p[key] = imported[key];
+  for (const [key, value] of Object.entries(imported.contact || {}))
+    if (value && (replace || !p.contact[key])) p.contact[key] = value;
+  for (const key of ['skills', 'experience', 'education', 'certifications', 'projects', 'languages']) {
+    const incoming = imported[key] || [];
+    if (!incoming.length) continue;
+    if (replace || !(p[key] || []).length) p[key] = clone(incoming);
+    else {
+      const have = new Set((p[key] || []).map((x) => JSON.stringify(x)));
+      for (const item of incoming) {
+        const sig = JSON.stringify(item);
+        if (!have.has(sig)) { p[key].push(clone(item)); have.add(sig); }
+      }
+    }
+  }
+}
+function importApply() {
+  if (!IMPORT_PROFILE) { importSetStatus('importNoFile', 'warn'); return; }
+  const fields = importFieldSummary(IMPORT_PROFILE);
+  mergeImportedProfile(IMPORT_PROFILE, $('#import-replace').checked);
+  saveLocal();
+  renderWizard();
+  renderTabs();
+  if (ST.report) buildOutputs(false, true);
+  $('#import-modal').hidden = true;
+  const bar = $('#import-done');
+  if (bar) {
+    IMPORT_DONE_FIELDS = fields;
+    bar.textContent = T('importApplied', { fields });
+    bar.hidden = false;
+    clearTimeout(IMPORT_DONE_TIMER);
+    IMPORT_DONE_TIMER = setTimeout(() => { bar.hidden = true; }, 9000);
+  }
+}
+function openImport() {
+  IMPORT_FILE = null;
+  IMPORT_PROFILE = null;
+  $('#import-zone').classList.remove('dragover');
+  const fn = $('#import-filename');
+  if (fn) { fn.textContent = ''; fn.hidden = true; }
+  const fi = $('#import-file');
+  if (fi) fi.value = '';
+  $('#import-apply').disabled = true;
+  importClearStatus();
+  $('#import-modal').hidden = false;
+}
+
 /* ------------------------------------------------------------------ UI */
 function applyLanguage() {
   document.documentElement.lang = ST.lang;
@@ -708,6 +1228,10 @@ function applyLanguage() {
     n.classList.remove('theme-mono', 'theme-green', 'theme-rose');
     n.classList.add('theme-' + ST.theme);
   });
+  if (IMPORT_STATUS && $('#import-status') && !$('#import-modal').hidden)
+    importSetStatus(IMPORT_STATUS.key, IMPORT_STATUS.cls, IMPORT_STATUS.vars);
+  if (IMPORT_DONE_FIELDS && $('#import-done') && !$('#import-done').hidden)
+    $('#import-done').textContent = T('importApplied', { fields: IMPORT_DONE_FIELDS });
 }
 function showPane(name) {
   $$('.pane').forEach((p) => p.classList.toggle('active', p.id === 'pane-' + name));
@@ -1134,6 +1658,47 @@ function generateFiles() {
 
 /* ----------------------------------------------------------- web UI text */
 const WEB_TEXT = {
+  importDocx: { en: 'Import DOCX', pl: 'Importuj DOCX', ar: 'استيراد DOCX' },
+  importTitle: {
+    en: 'Fill the form from a DOCX file', pl: 'Wypełnij formularz z pliku DOCX',
+    ar: 'املأ النموذج من ملف DOCX' },
+  importHint: {
+    en: 'Choose a Word .docx CV. Its text is read locally in your browser and matched to the form fields. Nothing is uploaded.',
+    pl: 'Wybierz CV w formacie Word .docx. Tekst jest odczytywany lokalnie w przeglądarce i dopasowywany do pól formularza. Nic nie jest wysyłane.',
+    ar: 'اختر سيرة ذاتية بصيغة Word .docx. تتم قراءة النص محلياً في متصفحك ومطابقته مع حقول النموذج. لا يتم رفع أي شيء.' },
+  importDrop: {
+    en: 'Drop a .docx file here, or click to browse',
+    pl: 'Upuść plik .docx tutaj lub kliknij, aby wybrać',
+    ar: 'أفلت ملف .docx هنا أو انقر للاختيار' },
+  importReplace: {
+    en: 'Replace existing entries', pl: 'Zastąp istniejące wpisy',
+    ar: 'استبدال الإدخالات الحالية' },
+  importApply: { en: 'Fill fields', pl: 'Uzupełnij pola', ar: 'املأ الحقول' },
+  importReady: {
+    en: 'Read {file}: {fields}.', pl: 'Odczytano {file}: {fields}.',
+    ar: 'تمت قراءة {file}: {fields}.' },
+  importError: {
+    en: 'Could not read this DOCX: {error}', pl: 'Nie udało się odczytać pliku DOCX: {error}',
+    ar: 'تعذرت قراءة ملف DOCX: {error}' },
+  importNoFile: {
+    en: 'Choose a .docx file first.', pl: 'Najpierw wybierz plik .docx.',
+    ar: 'اختر ملف .docx أولاً.' },
+  importBadExt: {
+    en: 'Only .docx files are supported.', pl: 'Obsługiwane są tylko pliki .docx.',
+    ar: 'الملفات المدعومة بصيغة .docx فقط.' },
+  importEmptyDoc: {
+    en: 'The document has no readable text.', pl: 'Dokument nie zawiera tekstu do odczytania.',
+    ar: 'لا يحتوي المستند على نص يمكن قراءته.' },
+  importNothingShort: {
+    en: 'no recognised fields', pl: 'brak rozpoznanych pól', ar: 'لا توجد حقول معروفة' },
+  importNothing: {
+    en: 'No recognisable fields found in {file}. Use a Word .docx with standard CV headings.',
+    pl: 'Nie znaleziono rozpoznawalnych pól w pliku {file}. Użyj Word .docx ze standardowymi nagłówkami CV.',
+    ar: 'لم يتم العثور على حقول معروفة في {file}. استخدم Word .docx بعناوين سيرة ذاتية قياسية.' },
+  importApplied: {
+    en: 'DOCX imported: {fields}. Review the fields before generating.',
+    pl: 'Zaimportowano DOCX: {fields}. Sprawdź pola przed wygenerowaniem.',
+    ar: 'تم استيراد DOCX: {fields}. راجع الحقول قبل الإنشاء.' },
   fileFormat: { en: 'File format', pl: 'Format pliku', ar: 'تنسيق الملف' },
   formatPdf: { en: 'PDF (Save as PDF)', pl: 'PDF (Zapisz jako PDF)', ar: 'PDF (حفظ كملف PDF)' },
   formatWord: { en: 'Word (.doc)', pl: 'Word (.doc)', ar: 'Word (.doc)' },
@@ -1290,7 +1855,29 @@ function bindEvents() {
   $('#mode-toggle').addEventListener('click', () => setMode(ST.mode === 'wizard' ? 'tabs' : 'wizard'));
   $('#about-btn').addEventListener('click', () => { $('#about-modal').hidden = false; });
   $$('[data-close-modal]').forEach((n) => n.addEventListener('click', () => { $('#about-modal').hidden = true; }));
-  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') $('#about-modal').hidden = true; });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    $('#about-modal').hidden = true;
+    $('#import-modal').hidden = true;
+  });
+
+  // DOCX import: in-page dialog, file is never uploaded or sent anywhere.
+  $('#import-btn').addEventListener('click', openImport);
+  $$('[data-close-import]').forEach((n) => n.addEventListener('click', () => { $('#import-modal').hidden = true; }));
+  const zone = $('#import-zone');
+  $('#import-file').addEventListener('change', (e) => {
+    const f = e.target.files && e.target.files[0];
+    if (f) importReadFile(f);
+  });
+  zone.addEventListener('dragover', (e) => { e.preventDefault(); zone.classList.add('dragover'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('dragover'));
+  zone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    zone.classList.remove('dragover');
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) importReadFile(f);
+  });
+  $('#import-apply').addEventListener('click', importApply);
 
   $('#wiz-back').addEventListener('click', () => { if (ST.wizStep > 0) { ST.wizStep--; renderWizard(); } });
   $('#wiz-next').addEventListener('click', () => {

@@ -26,7 +26,7 @@ Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
 | --- | --- | --- |
 | Interfejs | `index.html`, `styles.css` | ciemny motyw, pełne RTL dla arabskiego, układ responsywny, druk A4 |
 | Tłumaczenia | `i18n.js` | EN / PL / AR (ponad 370 kluczy) i funkcja `tr()` z interpolacją |
-| Logika | `app.js` | stan i `localStorage`, kreator 10 kroków, edytory zakładek, punktacja ATS, dopasowanie słów kluczowych, pobieranie plików |
+| Logika | `app.js` | stan i `localStorage`, kreator 10 kroków, edytory zakładek, punktacja ATS, dopasowanie słów kluczowych, import DOCX, pobieranie plików |
 | Osadzanie | `embed.html` | pomocnik: gotowy kod iframe dla Google Sites + podgląd |
 | Ikona | `favicon.svg` | znak „CV” w zielono-złotej kolorystyce |
 
@@ -47,6 +47,14 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
   kluczowych z ogłoszenia oraz wynik 0–100 z listą znalezisk.
 - **Styl dokumentu**: czarno-biały, zielono-czarny, różowo-czarny (tylko kolory – bez
   tabel, pól tekstowych i obrazów w tekście, żeby ATS czytał treść poprawnie).
+- **Import DOCX** — przycisk *Importuj DOCX* otwiera panel wewnątrz strony (bez
+  nowego okna): przeciągnij plik `.docx` do pola lub wybierz go z dysku, a aplikacja
+  sama rozpoznaje dane kontaktowe, sekcje CV, umiejętności, doświadczenie,
+  wykształcenie, certyfikaty, projekty i języki. Domyślnie zaznaczone jest
+  **Zastąp istniejące pola**; po odznaczeniu puste pola są uzupełniane, a nowe
+  wpisy listy dodawane bez usuwania poprzednich. Po imporcie sprawdź pola w
+  kreatorze/zakładkach i zapisz profil. Statusy i komunikaty o błędach są
+  przetłumaczone na EN/PL/AR. Plik jest analizowany wyłącznie w przeglądarce.
 - **Ostatni ekran ma jeden przycisk `Generuj`.** Najpierw wybierasz styl dokumentu,
   potem zaznaczasz format(y): **PDF** i/lub **Word (`.doc`)** – pliki `.txt` nie są
   już oferowane. Po kliknięciu `Generuj` powstają zaznaczone pliki:
@@ -162,10 +170,11 @@ Pages przebuduje stronę automatycznie. Jeśli zmieniłeś `app.js`, `styles.css
 
 ## Prywatność
 
-Wszystkie dane wprowadzone do formularzy, analiza słów kluczowych i tworzenie
-dokumentów odbywają się w przeglądarce przez JavaScript. Nie ma żadnych żądań
-sieciowych, statystyk ani przesyłania danych; profil żyje wyłącznie w
-`localStorage` przeglądarki, dopóki użytkownik sam go nie wyeksportuje.
+Wszystkie dane wprowadzone do formularzy, import dokumentów `.docx`, analiza słów
+kluczowych i tworzenie dokumentów odbywają się w przeglądarce przez JavaScript.
+Plik DOCX jest rozpakowywany i czytany lokalnie — nie jest nigdzie wysyłany.
+Nie ma żadnych żądań sieciowych, statystyk ani przesyłania danych; profil żyje
+wyłącznie w `localStorage` przeglądarki, dopóki użytkownik sam go nie wyeksportuje.
 
 ---
 
