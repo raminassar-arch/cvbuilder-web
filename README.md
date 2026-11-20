@@ -26,7 +26,7 @@ Hosting: GitHub Pages, gałąź `main`, katalog główny (`/`).
 | --- | --- | --- |
 | Interfejs | `index.html`, `styles.css` | ciemny motyw, pełne RTL dla arabskiego, układ responsywny, druk A4 |
 | Tłumaczenia | `i18n.js` | EN / PL / AR (ponad 370 kluczy) i funkcja `tr()` z interpolacją |
-| Logika | `app.js` | stan i `localStorage`, kreator 10 kroków, edytory zakładek, punktacja ATS, dopasowanie słów kluczowych, import DOCX, pobieranie plików |
+| Logika | `app.js` | stan i `localStorage`, kreator 10 kroków, edytory zakładek, punktacja ATS, dopasowanie słów kluczowych, import DOCX i PDF, pobieranie plików |
 | Osadzanie | `embed.html` | pomocnik: gotowy kod iframe dla Google Sites + podgląd |
 | Ikona | `favicon.svg` | znak „CV” w zielono-złotej kolorystyce |
 
@@ -47,16 +47,18 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
   kluczowych z ogłoszenia oraz wynik 0–100 z listą znalezisk.
 - **Styl dokumentu**: czarno-biały, zielono-czarny, różowo-czarny (tylko kolory – bez
   tabel, pól tekstowych i obrazów w tekście, żeby ATS czytał treść poprawnie).
-- **Import DOCX** — na **pierwszym ekranie** (wybór trybu) jest trzecia karta
-  *Importuj DOCX*, obok kreatora i zakładek. Ten sam przycisk jest też w nagłówku.
-  Otwiera panel wewnątrz strony (bez nowego okna): przeciągnij plik `.docx` do pola
+- **Import DOCX i PDF** — na **pierwszym ekranie** (wybór trybu) są karty
+  *Importuj DOCX* i *Importuj PDF*, obok kreatora i zakładek. Otwierają panel
+  wewnątrz strony (bez nowego okna): przeciągnij plik `.docx` lub `.pdf` do pola
   lub wybierz go z dysku, a aplikacja
   sama rozpoznaje dane kontaktowe, sekcje CV, umiejętności, doświadczenie,
   wykształcenie, certyfikaty, projekty i języki. Domyślnie zaznaczone jest
   **Zastąp istniejące pola**; po odznaczeniu puste pola są uzupełniane, a nowe
-  wpisy listy dodawane bez usuwania poprzednich. Po imporcie sprawdź pola w
-  kreatorze/zakładkach i zapisz profil. Statusy i komunikaty o błędach są
-  przetłumaczone na EN/PL/AR. Plik jest analizowany wyłącznie w przeglądarce.
+  wpisy listy dodawane bez usuwania poprzednich. Po imporcie od razu przechodzisz
+  do wypełnionych zakładek. Statusy i komunikaty o błędach są przetłumaczone na
+  EN/PL/AR. Plik jest analizowany wyłącznie w przeglądarce — bez przesyłania,
+  bibliotek i serwera. PDF musi mieć warstwę tekstu; skany i same obrazy nie
+  mogą być odczytane.
 - **Ostatni ekran ma jeden przycisk `Generuj`.** Najpierw wybierasz styl dokumentu,
   potem zaznaczasz format(y): **PDF** i/lub **Word (`.doc`)** – pliki `.txt` nie są
   już oferowane. Po kliknięciu `Generuj` powstają zaznaczone pliki:
@@ -172,9 +174,9 @@ Pages przebuduje stronę automatycznie. Jeśli zmieniłeś `app.js`, `styles.css
 
 ## Prywatność
 
-Wszystkie dane wprowadzone do formularzy, import dokumentów `.docx`, analiza słów
-kluczowych i tworzenie dokumentów odbywają się w przeglądarce przez JavaScript.
-Plik DOCX jest rozpakowywany i czytany lokalnie — nie jest nigdzie wysyłany.
+Wszystkie dane wprowadzone do formularzy, import dokumentów `.docx` i `.pdf`, analiza
+słów kluczowych i tworzenie dokumentów odbywają się w przeglądarce przez JavaScript.
+Pliki są rozpakowywane/dekodowane i czytane lokalnie — nie są nigdzie wysyłane.
 Nie ma żadnych żądań sieciowych, statystyk ani przesyłania danych; profil żyje
 wyłącznie w `localStorage` przeglądarki, dopóki użytkownik sam go nie wyeksportuje.
 

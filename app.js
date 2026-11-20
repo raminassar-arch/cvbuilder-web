@@ -296,6 +296,344 @@ function docxLines(buffer) {
   return out;
 }
 
+/* ---------------------------------------------------------- PDF import (text layer)
+   A PDF is a set of content streams containing text-showing operators.  This
+   small reader scans those streams, inflates FlateDecode data with the decoder
+   above, reads ToUnicode maps when present, and rebuilds plain text lines.
+   No library, no CDN, no upload - it runs entirely in the browser. */
+const WIN1252 = [0x20ac,0x0081,0x201a,0x0192,0x201e,0x2026,0x2020,0x2021,
+  0x02c6,0x2030,0x0160,0x2039,0x0152,0x008d,0x017d,0x008f,
+  0x0090,0x2018,0x2019,0x201c,0x201d,0x2022,0x2013,0x2014,
+  0x02dc,0x2122,0x0161,0x203a,0x0153,0x009d,0x017e,0x0178];
+
+function latin1(bytes) {
+  let s = '';
+  for (let i = 0; i < bytes.length; i += 0x8000)
+    s += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return s;
+}
+function decodeUtf16BE(hex) {
+  if (!hex || !hex.length) return '';
+  if (hex.length % 4) hex = '0' + hex;
+  let s = '';
+  for (let i = 0; i < hex.length; i += 4)
+    s += String.fromCharCode(parseInt(hex.slice(i, i + 4), 16) || 0);
+  return s;
+}
+function ascii85Bytes(text) {
+  const s = text.replace(/\s+/g, '').replace(/^<~/, '').replace(/~>$/, '');
+  const out = [];
+  let group = [];
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === 'z' && !group.length) { out.push(0, 0, 0, 0); continue; }
+    const v = ch.charCodeAt(0) - 33;
+    if (v < 0 || v > 84) break;
+    group.push(v);
+    if (group.length === 5) {
+      const n = ((((group[0] * 85 + group[1]) * 85 + group[2]) * 85 + group[3]) * 85 + group[4]) >>> 0;
+      out.push((n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255);
+      group = [];
+    }
+  }
+  if (group.length > 1) {
+    const keep = group.length - 1;
+    while (group.length < 5) group.push(84);
+    const n = ((((group[0] * 85 + group[1]) * 85 + group[2]) * 85 + group[3]) * 85 + group[4]) >>> 0;
+    const b = [(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255];
+    for (let i = 0; i < keep; i++) out.push(b[i]);
+  }
+  return new Uint8Array(out);
+}
+function inflateMaybe(bytes) {
+  // DOCX zip entries are raw DEFLATE; PDF /FlateDecode streams add a 2-byte
+  // zlib header (and a 4-byte checksum we can ignore) around the same data.
+  let data = bytes;
+  if (bytes.length > 6 && bytes[0] === 0x78
+      && (bytes[1] === 0x01 || bytes[1] === 0x5e || bytes[1] === 0x9c || bytes[1] === 0xda))
+    data = bytes.subarray(2);
+  return new Uint8Array(inflateRaw(data));
+}
+function pdfScore(s) {
+  return ((s.match(/\bBT\b/g) || []).length * 6)
+    + ((s.match(/\bTj\b|\bTJ\b/g) || []).length * 3)
+    + (s.includes('beginbfchar') || s.includes('beginbfrange') ? 5 : 0);
+}
+function pdfStreams(bytes) {
+  const raw = latin1(bytes);
+  const out = [];
+  let from = 0;
+  for (;;) {
+    const at = raw.indexOf('stream', from);
+    if (at < 0) break;
+    from = at + 6;
+    if (raw.slice(at - 3, at) === 'end') continue;   // endstream
+    let start = at + 6;
+    if (raw[start] === '\r') { start++; if (raw[start] === '\n') start++; }
+    else if (raw[start] === '\n') start++;
+    const end = raw.indexOf('endstream', start);
+    if (end < 0) break;
+    let stop = end;
+    if (raw[stop - 2] === '\r' && raw[stop - 1] === '\n') stop -= 2;
+    else if (raw[stop - 1] === '\n' || raw[stop - 1] === '\r') stop -= 1;
+    const chunk = bytes.subarray(start, stop);
+    const candidates = [latin1(chunk)];
+    try { candidates.push(latin1(inflateMaybe(chunk))); } catch (e) { /* stored stream */ }
+    try { candidates.push(latin1(inflateMaybe(ascii85Bytes(candidates[0])))); }
+    catch (e) { /* not ASCII85 */ }
+    let best = candidates[0], bestScore = pdfScore(best);
+    for (const c of candidates) {
+      const s = pdfScore(c);
+      if (s > bestScore) { best = c; bestScore = s; }
+    }
+    out.push(best);
+    from = end + 9;
+  }
+  return out;
+}
+function parseCMap(text, map1, map2) {
+  const add = (code, uni) => {
+    if (!uni || code < 0 || code > 0xffff) return;
+    // Fonts may show codes as either one byte or two bytes - keep both so the
+    // same ToUnicode mapping works for `<24>` and `<0024>` string encodings.
+    if (code <= 255) map1.set(code, uni);
+    map2.set(code, uni);
+  };
+  const re = /beginbfchar([\s\S]*?)endbfchar|beginbfrange([\s\S]*?)endbfrange/g;
+  let m;
+  while ((m = re.exec(text))) {
+    if (m[1] !== undefined) {
+      const r = /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>/g;
+      let x;
+      while ((x = r.exec(m[1]))) add(parseInt(x[1], 16), decodeUtf16BE(x[2]));
+    } else {
+      const r = /<([0-9a-fA-F]+)>\s*<([0-9a-fA-F]+)>\s*(?:<([0-9a-fA-F]+)>|\[([\s\S]*?)\])/g;
+      let x;
+      while ((x = r.exec(m[2]))) {
+        const a = parseInt(x[1], 16), b = parseInt(x[2], 16);
+        if (x[3]) {
+          const base = parseInt(x[3], 16);
+          for (let c = a; c <= b && c <= a + 0xffff; c++)
+            add(c, decodeUtf16BE((base + (c - a)).toString(16).padStart(4, '0')));
+        } else if (x[4]) {
+          const list = x[4].match(/<[0-9a-fA-F]+>/g) || [];
+          list.forEach((h, i) => add(a + i, decodeUtf16BE(h.slice(1, -1))));
+        }
+      }
+    }
+  }
+}
+function pdfDecode(bytes, map1, map2) {
+  if (bytes.length >= 4) {
+    let zeros = 0, pairs = 0;
+    for (let i = 0; i + 1 < bytes.length; i += 2) { pairs++; if (bytes[i] === 0) zeros++; }
+    if (zeros > pairs * 0.6) {
+      // Type0/CID fonts show two-byte glyph codes.  They are NOT Unicode yet -
+      // each code must go through the font's ToUnicode map first.
+      let s = '';
+      for (let i = 0; i + 1 < bytes.length; i += 2) {
+        const code = bytes[i] * 256 + bytes[i + 1];
+        if (map2.has(code)) s += map2.get(code);
+        else if (map1.has(code)) s += map1.get(code);
+        else s += String.fromCharCode(code);
+      }
+      if (s) return s;
+    }
+  }
+  let s = '';
+  for (let i = 0; i < bytes.length;) {
+    const two = (bytes[i] << 8) | (bytes[i + 1] === undefined ? 0 : bytes[i + 1]);
+    if (map2.has(two)) { s += map2.get(two); i += 2; continue; }
+    const b = bytes[i];
+    if (map1.has(b)) s += map1.get(b);
+    else if (b >= 0x80 && b <= 0x9f) s += String.fromCharCode(WIN1252[b - 0x80]);
+    else s += String.fromCharCode(b);
+    i++;
+  }
+  return s;
+}
+function pdfTokens(src) {
+  const toks = [];
+  let i = 0;
+  const ws = (c) => c === ' ' || c === '\t' || c === '\n' || c === '\r' || c === '\f' || c === '\0';
+  const delim = (c) => '()<>[]{}/%'.includes(c);
+  while (i < src.length) {
+    const c = src[i];
+    if (ws(c)) { i++; continue; }
+    if (c === '%') { while (i < src.length && src[i] !== '\n' && src[i] !== '\r') i++; continue; }
+    if (c === '(') {
+      i++;
+      let depth = 1;
+      const buf = [];
+      while (i < src.length && depth > 0) {
+        let ch = src[i++];
+        if (ch === '\\') {
+          const nx = src[i++];
+          if (nx === undefined) break;
+          if (nx >= '0' && nx <= '7') {
+            let oct = nx;
+            for (let k = 0; k < 2 && src[i] >= '0' && src[i] <= '7'; k++) oct += src[i++];
+            buf.push(parseInt(oct, 8) & 255);
+          } else if (nx === 'n') buf.push(10);
+          else if (nx === 'r') buf.push(13);
+          else if (nx === 't') buf.push(9);
+          else if (nx === 'b') buf.push(8);
+          else if (nx === 'f') buf.push(12);
+          else if (nx === '\n') { /* line continuation */ }
+          else if (nx === '\r') { if (src[i] === '\n') i++; }
+          else buf.push(nx.charCodeAt(0) & 255);
+        } else if (ch === '(') { depth++; buf.push(40); }
+        else if (ch === ')') { depth--; if (depth) buf.push(41); }
+        else buf.push(ch.charCodeAt(0) & 255);
+      }
+      toks.push({ t: 'str', v: Uint8Array.from(buf) });
+      continue;
+    }
+    if (c === '<') {
+      if (src[i + 1] === '<') { i += 2; toks.push({ t: 'op', v: '<<' }); continue; }
+      i++;
+      let h = '';
+      while (i < src.length && src[i] !== '>') { if (!ws(src[i])) h += src[i]; i++; }
+      i++;
+      if (h.length % 2) h += '0';
+      const b = [];
+      for (let k = 0; k < h.length; k += 2) b.push(parseInt(h.slice(k, k + 2), 16) || 0);
+      toks.push({ t: 'str', v: Uint8Array.from(b) });
+      continue;
+    }
+    if (c === '>') { if (src[i + 1] === '>') { i += 2; toks.push({ t: 'op', v: '>>' }); } else i++; continue; }
+    if (c === '[') { i++; toks.push({ t: 'op', v: '[' }); continue; }
+    if (c === ']') { i++; toks.push({ t: 'op', v: ']' }); continue; }
+    if (c === '/') {
+      i++;
+      let n = '';
+      while (i < src.length && !ws(src[i]) && !delim(src[i])) n += src[i++];
+      toks.push({ t: 'name', v: n });
+      continue;
+    }
+    let w = '';
+    while (i < src.length && !ws(src[i]) && !delim(src[i])) w += src[i++];
+    if (!w) { i++; continue; }
+    toks.push({ t: /^-?(?:\d+\.?\d*|\.\d+)$/.test(w) ? 'num' : 'op', v: w });
+  }
+  return toks;
+}
+function pdfContentLines(src, map1, map2, meta) {
+  const toks = pdfTokens(src);
+  const lines = [];
+  let cur = '', lineY = null, lastEndX = 0, x = 0, y = 0;
+  let lineStartX = 0, lineStartY = 0;
+  let lx = 0, ly = 0, leading = 0, fontSize = 11;
+  let stack = [], arr = null;
+  const flush = () => {
+    const s = cur.replace(/\s+/g, ' ').trim();
+    if (s) lines.push(meta ? { s, x0: lineStartX, y0: lineStartY } : s);
+    cur = '';
+  };
+  const show = (text, adv) => {
+    if (!text) return;
+    if (lineY === null) { lineY = y; lineStartX = x; lineStartY = y; }
+    if (Math.abs(y - lineY) > 1.5) {
+      flush(); lineY = y; lastEndX = 0; lineStartX = x; lineStartY = y;
+    }
+    if (x > lastEndX + fontSize * 0.4) {
+      const gap = Math.round((x - lastEndX) / (fontSize * 0.55));
+      cur += ' '.repeat(Math.max(1, Math.min(gap, 8)));
+    }
+    cur += text;
+    lastEndX = x + adv;
+    x = lastEndX;
+  };
+  const n = (v) => (v && v.n !== undefined ? v.n : 0);
+  for (const t of toks) {
+    if (t.t === 'str') {
+      const item = { s: pdfDecode(t.v, map1, map2) };
+      if (arr) arr.push(item); else stack.push(item);
+      continue;
+    }
+    if (t.t === 'num') {
+      const item = { n: parseFloat(t.v) || 0 };
+      if (arr) arr.push(item); else stack.push(item);
+      continue;
+    }
+    if (t.t === 'name') { stack.push({ name: t.v }); continue; }
+    const op = t.v;
+    if (op === '[') { arr = []; continue; }
+    if (op === ']') { stack.push({ arr: arr || [] }); arr = null; continue; }
+    if (op === 'BT') { flush(); lineY = null; x = y = lx = ly = 0; stack = []; continue; }
+    if (op === 'ET') { flush(); lineY = null; stack = []; continue; }
+    if (op === 'Tf') { const sz = stack.pop(); stack.pop(); if (sz && sz.n) fontSize = sz.n; stack = []; continue; }
+    if (op === 'Tm') {
+      const f = stack.pop(), e = stack.pop(); stack.pop(); stack.pop(); stack.pop(); stack.pop();
+      if (e) { x = e.n; y = f.n; lx = x; ly = y; }
+      stack = []; continue;
+    }
+    if (op === 'Td' || op === 'TD') {
+      const ty = stack.pop(), tx = stack.pop();
+      if (op === 'TD') leading = -n(ty);
+      lx += n(tx); ly += n(ty); x = lx; y = ly; stack = []; continue;
+    }
+    if (op === 'T*') { ly -= leading; x = lx; y = ly; stack = []; continue; }
+    if (op === 'TL') { const l = stack.pop(); if (l) leading = n(l); stack = []; continue; }
+    if (op === "'" || op === '"') {
+      if (op === '"') { stack.pop(); stack.pop(); }
+      const item = stack.pop();
+      ly -= leading; x = lx; y = ly;
+      if (item && item.s !== undefined) show(item.s, item.s.length * fontSize * 0.5);
+      stack = []; continue;
+    }
+    if (op === 'Tj' || op === 'TJ') {
+      const item = stack.pop();
+      if (item && item.arr) {
+        let text = '', adv = 0;
+        for (const it of item.arr) {
+          if (it.s !== undefined) { text += it.s; adv += it.s.length * fontSize * 0.5; }
+          else if (it.n < -180) { text += ' '; adv += fontSize * 0.3; }
+        }
+        show(text, adv);
+      } else if (item && item.s !== undefined) show(item.s, item.s.length * fontSize * 0.5);
+      stack = []; continue;
+    }
+    if (stack.length > 16) stack = [];
+  }
+  flush();
+  return lines;
+}
+function pdfLines(buffer) {
+  const bytes = new Uint8Array(buffer);
+  const head = latin1(bytes.subarray(0, Math.min(1024, bytes.length)));
+  if (!head.includes('%PDF')) throw new Error('Not a PDF file');
+  const streams = pdfStreams(bytes);
+  const map1 = new Map(), map2 = new Map();
+  for (const s of streams)
+    if (s.includes('beginbfchar') || s.includes('beginbfrange')) parseCMap(s, map1, map2);
+  const items = [];
+  for (const s of streams) {
+    if (!/\bBT\b/.test(s) || !/\bTj\b|\bTJ\b|\bTf\b/.test(s)) continue;
+    for (const line of pdfContentLines(s, map1, map2, true)) items.push(line);
+  }
+  // The most common left edge is the body margin.  Lines indented past it are
+  // list items - restore the bullet sign the parser expects.  Very low lines
+  // are print headers/footers (date, file URL, page number), not CV content.
+  const counts = new Map();
+  for (const it of items) {
+    const k = Math.round(it.x0);
+    counts.set(k, (counts.get(k) || 0) + 1);
+  }
+  let bodyX = 0, best = 0;
+  for (const [k, n] of counts) if (n > best) { best = n; bodyX = k; }
+  const maxY = items.reduce((m, it) => Math.max(m, it.y0), 0);
+  const out = [];
+  for (const it of items) {
+    const s = it.s;
+    const printFooter = it.y0 > maxY - 40 && (/^\d{1,4}$/.test(s) || s === '/');
+    if (printFooter || /^(?:file|https?):\/\//i.test(s)
+        || /^\d{1,2}[.\/-]\d{1,2}[.\/-]\d{2,4}/.test(s)) continue;
+    out.push((it.x0 > bodyX + 6 ? '• ' : '') + s);
+  }
+  return out;
+}
+
 const IMPORT_MONTH = {
   jan:'Jan', feb:'Feb', mar:'Mar', apr:'Apr', may:'May', jun:'Jun', jul:'Jul', aug:'Aug',
   sep:'Sep', sept:'Sep', oct:'Oct', nov:'Nov', dec:'Dec',
@@ -342,7 +680,11 @@ function importHeadingKey(line) {
   const low = s.toLowerCase();
   if (KNOWN[low]) return KNOWN[low];
   if (s === s.toUpperCase() && low.split(/\s+/).length <= 5) {
+    // PDF text extraction can leave a tiny gap inside a capitalised word
+    // ("SUMMAR Y", "EDUCA TION").  Compare punctuation-free compact forms too.
+    const compact = low.replace(/[^a-z0-9&]+/g, '');
     for (const [phrase, key] of Object.entries(KNOWN)) {
+      if (compact && phrase.replace(/[^a-z0-9&]+/g, '') === compact) return key;
       if (phrase.split(/\s+/).every((w) => low.includes(w))) return key;
     }
   }
@@ -1141,8 +1483,9 @@ async function importReadFile(file) {
   $('#import-filename').hidden = false;
   $('#import-apply').disabled = true;
   try {
-    if (!/\.docx$/i.test(file.name)) throw new Error(T('importBadExt'));
-    const lines = docxLines(await file.arrayBuffer());
+    const isPdf = /\.pdf$/i.test(file.name), isDocx = /\.docx$/i.test(file.name);
+    if (!isPdf && !isDocx) throw new Error(T('importBadExt'));
+    const lines = isPdf ? pdfLines(await file.arrayBuffer()) : docxLines(await file.arrayBuffer());
     if (!lines.length) throw new Error(T('importEmptyDoc'));
     IMPORT_PROFILE = parseDocxProfile(lines);
     const fields = importFieldSummary(IMPORT_PROFILE);
@@ -1685,17 +2028,23 @@ const WEB_TEXT = {
     en: 'Fill the form from an existing Word .docx CV.',
     pl: 'Uzupełnij formularz z istniejącego CV w Word .docx.',
     ar: 'املأ النموذج من سيرة ذاتية موجودة بصيغة Word .docx.' },
+  importPdf: { en: 'Import PDF', pl: 'Importuj PDF', ar: 'استيراد PDF' },
+  pdfDesc: {
+    en: 'Fill the form from an existing text-based PDF CV.',
+    pl: 'Uzupełnij formularz z istniejącego CV w PDF z warstwą tekstu.',
+    ar: 'املأ النموذج من سيرة ذاتية PDF تحتوي على طبقة نص.' },
   importTitle: {
-    en: 'Fill the form from a DOCX file', pl: 'Wypełnij formularz z pliku DOCX',
-    ar: 'املأ النموذج من ملف DOCX' },
+    en: 'Fill the form from a DOCX or PDF file',
+    pl: 'Wypełnij formularz z pliku DOCX lub PDF',
+    ar: 'املأ النموذج من ملف DOCX أو PDF' },
   importHint: {
-    en: 'Choose a Word .docx CV. Its text is read locally in your browser and matched to the form fields. Nothing is uploaded.',
-    pl: 'Wybierz CV w formacie Word .docx. Tekst jest odczytywany lokalnie w przeglądarce i dopasowywany do pól formularza. Nic nie jest wysyłane.',
-    ar: 'اختر سيرة ذاتية بصيغة Word .docx. تتم قراءة النص محلياً في متصفحك ومطابقته مع حقول النموذج. لا يتم رفع أي شيء.' },
+    en: 'Choose a Word .docx or text-based PDF CV. Its text is read locally in your browser and matched to the form fields. Nothing is uploaded. Scanned/image-only PDFs cannot be read.',
+    pl: 'Wybierz CV w formacie Word .docx lub PDF z warstwą tekstu. Tekst jest odczytywany lokalnie w przeglądarce i dopasowywany do pól formularza. Nic nie jest wysyłane. Skany i same obrazy nie mogą być odczytane.',
+    ar: 'اختر سيرة ذاتية بصيغة Word .docx أو PDF تحتوي على طبقة نص. تتم قراءة النص محلياً في متصفحك ومطابقته مع حقول النموذج. لا يتم رفع أي شيء. لا يمكن قراءة ملفات PDF الممسوحة ضوئياً.' },
   importDrop: {
-    en: 'Drop a .docx file here, or click to browse',
-    pl: 'Upuść plik .docx tutaj lub kliknij, aby wybrać',
-    ar: 'أفلت ملف .docx هنا أو انقر للاختيار' },
+    en: 'Drop a .docx or .pdf file here, or click to browse',
+    pl: 'Upuść plik .docx lub .pdf tutaj lub kliknij, aby wybrać',
+    ar: 'أفلت ملف .docx أو .pdf هنا أو انقر للاختيار' },
   importReplace: {
     en: 'Replace existing entries', pl: 'Zastąp istniejące wpisy',
     ar: 'استبدال الإدخالات الحالية' },
@@ -1704,27 +2053,27 @@ const WEB_TEXT = {
     en: 'Read {file}: {fields}.', pl: 'Odczytano {file}: {fields}.',
     ar: 'تمت قراءة {file}: {fields}.' },
   importError: {
-    en: 'Could not read this DOCX: {error}', pl: 'Nie udało się odczytać pliku DOCX: {error}',
-    ar: 'تعذرت قراءة ملف DOCX: {error}' },
+    en: 'Could not read this file: {error}', pl: 'Nie udało się odczytać pliku: {error}',
+    ar: 'تعذرت قراءة الملف: {error}' },
   importNoFile: {
-    en: 'Choose a .docx file first.', pl: 'Najpierw wybierz plik .docx.',
-    ar: 'اختر ملف .docx أولاً.' },
+    en: 'Choose a .docx or .pdf file first.', pl: 'Najpierw wybierz plik .docx lub .pdf.',
+    ar: 'اختر ملف .docx أو .pdf أولاً.' },
   importBadExt: {
-    en: 'Only .docx files are supported.', pl: 'Obsługiwane są tylko pliki .docx.',
-    ar: 'الملفات المدعومة بصيغة .docx فقط.' },
+    en: 'Only .docx and .pdf files are supported.', pl: 'Obsługiwane są tylko pliki .docx i .pdf.',
+    ar: 'الملفات المدعومة بصيغة .docx و .pdf فقط.' },
   importEmptyDoc: {
     en: 'The document has no readable text.', pl: 'Dokument nie zawiera tekstu do odczytania.',
     ar: 'لا يحتوي المستند على نص يمكن قراءته.' },
   importNothingShort: {
     en: 'no recognised fields', pl: 'brak rozpoznanych pól', ar: 'لا توجد حقول معروفة' },
   importNothing: {
-    en: 'No recognisable fields found in {file}. Use a Word .docx with standard CV headings.',
-    pl: 'Nie znaleziono rozpoznawalnych pól w pliku {file}. Użyj Word .docx ze standardowymi nagłówkami CV.',
-    ar: 'لم يتم العثور على حقول معروفة في {file}. استخدم Word .docx بعناوين سيرة ذاتية قياسية.' },
+    en: 'No recognisable fields found in {file}. Use a Word .docx or text-based PDF with standard CV headings.',
+    pl: 'Nie znaleziono rozpoznawalnych pól w pliku {file}. Użyj Word .docx lub PDF z warstwą tekstu i standardowymi nagłówkami CV.',
+    ar: 'لم يتم العثور على حقول معروفة في {file}. استخدم Word .docx أو PDF مع طبقة نص بعناوين سيرة ذاتية قياسية.' },
   importApplied: {
-    en: 'DOCX imported: {fields}. Review the fields before generating.',
-    pl: 'Zaimportowano DOCX: {fields}. Sprawdź pola przed wygenerowaniem.',
-    ar: 'تم استيراد DOCX: {fields}. راجع الحقول قبل الإنشاء.' },
+    en: 'Document imported: {fields}. Review the fields before generating.',
+    pl: 'Zaimportowano dokument: {fields}. Sprawdź pola przed wygenerowaniem.',
+    ar: 'تم استيراد المستند: {fields}. راجع الحقول قبل الإنشاء.' },
   fileFormat: { en: 'File format', pl: 'Format pliku', ar: 'تنسيق الملف' },
   formatPdf: { en: 'PDF (Save as PDF)', pl: 'PDF (Zapisz jako PDF)', ar: 'PDF (حفظ كملف PDF)' },
   formatWord: { en: 'Word (.doc)', pl: 'Word (.doc)', ar: 'Word (.doc)' },
@@ -1879,6 +2228,7 @@ function bindEvents() {
     saveLocal(); setMode('tabs', true);
   });
   $('#choose-docx').addEventListener('click', openImport);
+  $('#choose-pdf').addEventListener('click', openImport);
   $('#mode-toggle').addEventListener('click', () => setMode(ST.mode === 'wizard' ? 'tabs' : 'wizard'));
   $('#about-btn').addEventListener('click', () => { $('#about-modal').hidden = false; });
   $$('[data-close-modal]').forEach((n) => n.addEventListener('click', () => { $('#about-modal').hidden = true; }));

@@ -54,6 +54,11 @@
             <strong data-i18n="importDocx">Import DOCX</strong>
             <span class="muted" data-i18n="docxDesc">Fill the form from an existing Word .docx CV.</span>
           </button>
+          <button type="button" class="choice-card" id="choose-pdf">
+            <span class="choice-icon">&#128196;</span>
+            <strong data-i18n="importPdf">Import PDF</strong>
+            <span class="muted" data-i18n="pdfDesc">Fill the form from an existing text-based PDF CV.</span>
+          </button>
         </div>
         <label class="checkbox-row">
           <input type="checkbox" id="dont-ask">
@@ -164,17 +169,17 @@
     </div>
   </div>
 
-  <!-- DOCX import dialog: parsing happens locally, no file ever leaves the browser -->
+  <!-- DOCX/PDF import dialog: parsing happens locally, no file ever leaves the browser -->
   <div id="import-modal" class="modal" hidden>
     <div class="modal-backdrop" data-close-import></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
       <button type="button" class="modal-close" data-close-import aria-label="Close">&times;</button>
-      <h2 id="import-modal-title" data-i18n="importTitle">Fill the form from a DOCX file</h2>
-      <p class="muted" data-i18n="importHint">Choose a Word .docx CV. Its text is read locally in your browser and matched to the form fields. Nothing is uploaded.</p>
+      <h2 id="import-modal-title" data-i18n="importTitle">Fill the form from a DOCX or PDF file</h2>
+      <p class="muted" data-i18n="importHint">Choose a Word .docx or text-based PDF CV. Its text is read locally in your browser and matched to the form fields. Nothing is uploaded. Scanned/image-only PDFs cannot be read.</p>
       <label id="import-zone" class="import-zone" for="import-file">
         <span class="import-zone-icon">&#128196;</span>
-        <span data-i18n="importDrop">Drop a .docx file here, or click to browse</span>
-        <input type="file" id="import-file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden>
+        <span data-i18n="importDrop">Drop a .docx or .pdf file here, or click to browse</span>
+        <input type="file" id="import-file" accept=".docx,.pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" hidden>
       </label>
       <p id="import-filename" class="import-filename" hidden></p>
       <label class="checkbox-row"><input type="checkbox" id="import-replace" checked> <span data-i18n="importReplace">Replace existing entries</span></label>
