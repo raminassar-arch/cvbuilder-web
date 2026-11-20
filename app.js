@@ -1659,6 +1659,10 @@ function generateFiles() {
 /* ----------------------------------------------------------- web UI text */
 const WEB_TEXT = {
   importDocx: { en: 'Import DOCX', pl: 'Importuj DOCX', ar: 'استيراد DOCX' },
+  docxDesc: {
+    en: 'Fill the form from an existing Word .docx CV.',
+    pl: 'Uzupełnij formularz z istniejącego CV w Word .docx.',
+    ar: 'املأ النموذج من سيرة ذاتية موجودة بصيغة Word .docx.' },
   importTitle: {
     en: 'Fill the form from a DOCX file', pl: 'Wypełnij formularz z pliku DOCX',
     ar: 'املأ النموذج من ملف DOCX' },
@@ -1852,6 +1856,7 @@ function bindEvents() {
     ST.settings.dont_ask = $('#dont-ask').checked;
     saveLocal(); setMode('tabs', true);
   });
+  $('#choose-docx').addEventListener('click', openImport);
   $('#mode-toggle').addEventListener('click', () => setMode(ST.mode === 'wizard' ? 'tabs' : 'wizard'));
   $('#about-btn').addEventListener('click', () => { $('#about-modal').hidden = false; });
   $$('[data-close-modal]').forEach((n) => n.addEventListener('click', () => { $('#about-modal').hidden = true; }));

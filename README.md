@@ -47,8 +47,10 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
   kluczowych z ogłoszenia oraz wynik 0–100 z listą znalezisk.
 - **Styl dokumentu**: czarno-biały, zielono-czarny, różowo-czarny (tylko kolory – bez
   tabel, pól tekstowych i obrazów w tekście, żeby ATS czytał treść poprawnie).
-- **Import DOCX** — przycisk *Importuj DOCX* otwiera panel wewnątrz strony (bez
-  nowego okna): przeciągnij plik `.docx` do pola lub wybierz go z dysku, a aplikacja
+- **Import DOCX** — na **pierwszym ekranie** (wybór trybu) jest trzecia karta
+  *Importuj DOCX*, obok kreatora i zakładek. Ten sam przycisk jest też w nagłówku.
+  Otwiera panel wewnątrz strony (bez nowego okna): przeciągnij plik `.docx` do pola
+  lub wybierz go z dysku, a aplikacja
   sama rozpoznaje dane kontaktowe, sekcje CV, umiejętności, doświadczenie,
   wykształcenie, certyfikaty, projekty i języki. Domyślnie zaznaczone jest
   **Zastąp istniejące pola**; po odznaczeniu puste pola są uzupełniane, a nowe
