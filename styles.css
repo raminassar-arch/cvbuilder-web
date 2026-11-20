@@ -278,6 +278,14 @@ html[dir="rtl"] .preview { font-family: "Segoe UI", Tahoma, sans-serif; directio
   font-size: .85rem; line-height: 1.4;
 }
 .import-note[hidden] { display: none; }
+.ai-details { margin: 0 0 8px; font-size: .85rem; color: var(--muted); }
+.ai-details summary { cursor: pointer; color: var(--gold); padding: 4px 0; }
+.ai-details label { display: flex; align-items: center; gap: 10px; margin: 6px 0; }
+.ai-details label span { min-width: 110px; }
+.ai-details input {
+  flex: 1; min-width: 0; padding: 6px 8px; border: 1px solid var(--border);
+  border-radius: 6px; background: var(--panel-2); color: var(--fg); font: inherit;
+}
 .import-status { margin: 12px 0 0; font-size: .9rem; color: var(--green); }
 .import-status.warn { color: var(--gold); }
 .import-status.error { color: var(--danger); }

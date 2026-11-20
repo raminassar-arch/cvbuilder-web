@@ -60,6 +60,15 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
   musi mieć warstwę tekstu; skany i same obrazy nie mogą być odczytane — najpierw
   użyj OCR lub wklej tekst wyciągnięty np. przez asystenta AI. Plik jest analizowany
   wyłącznie w przeglądarce — bez przesyłania, bibliotek i serwera.
+- **Lokalne uzupełnianie AI z CV** — lekkim modelem na **własnym GPU urządzenia**
+  wypełnia cały profil (dane kontaktowe, podsumowanie, umiejętności, doświadczenie,
+  wykształcenie, certyfikaty, projekty i języki) z tekstu CV. Przycisk
+  *Uzupełnij z CV przez AI* znajduje się w panelu importu. Nie ma klucza API, konta
+  ani przesyłania — na telefonie działa wbudowany model przeglądarki Chrome 148+
+  (także na Androidzie), a na desktopie awaryjnie lokalny serwer Ollama
+  (`http://127.0.0.1:11434`, model `llama3.2:3b`). Po uzupełnieniu od razu
+  przechodzisz do wypełnionych zakładek. Statusy i błędy są przetłumaczone na
+  EN/PL/AR. Szczegóły poniżej.
 - **Ostatni ekran ma jeden przycisk `Generuj`.** Najpierw wybierasz styl dokumentu,
   potem zaznaczasz format(y): **PDF** i/lub **Word (`.doc`)** – pliki `.txt` nie są
   już oferowane. Po kliknięciu `Generuj` powstają zaznaczone pliki:
@@ -68,6 +77,38 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
   - **PDF** – otwiera się osobne okno druku z samym dokumentem (bez interfejsu
     aplikacji); w oknie wybierz „Zapisz jako PDF". Działa też w osadzeniu Google Sites.
   Jeśli nie zaznaczysz żadnego formatu, aplikacja pokaże ostrzeżenie i nic nie pobierze.
+
+---
+
+## Lokalne uzupełnianie AI (bez chmury, bez klucza)
+
+W panelu importu jest przycisk **Uzupełnij z CV przez AI (model lokalny)**.
+Model analizuje tekst, który już jest w aplikacji (wczytany DOCX/PDF albo pola
+wypełnione ręcznie) i zwraca cały profil w jednym obiekcie JSON. Nie ma żadnych
+wywołań API, kluczy ani przesyłania CV na zewnętrzny serwer.
+
+### Telefon (smartfon)
+
+Użyj **Chrome 148+ na Androidzie** — ma wbudowany model językowy (`LanguageModel`,
+tzw. Prompt API), który działa na GPU/NPU telefonu. Nie trzeba nic instalować.
+Aplikacja sama wykrywa dostępność modelu i pokazuje postęp pobrania. Starsze
+przeglądarki, Safari i Firefox nie mają tego modelu — wtedy komunikat wskazuje,
+jak włączyć AI (zaktualizuj Chrome albo użyj komputera z Ollamą).
+
+### Komputer (fallback Ollama)
+
+1. Zainstaluj [Ollama](https://ollama.com/download) i uruchom ją.
+2. Pobierz lekki model raz: `ollama pull llama3.2:3b`.
+3. W panelu importu rozwiń **Ustawienia Ollama** — domyślny adres to
+   `http://127.0.0.1:11434`, model `llama3.2:3b`. Ustawienia zapisują się lokalnie.
+
+Strona GitHub Pages może wymagać dopuszczenia źródła (CORS):
+`OLLAMA_ORIGINS=https://raminassar-arch.github.io` przed startem Ollamy.
+Na telefonie lokalny Ollama nie jest osiągalny (localhost oznacza telefon),
+dlatego tam działa wyłącznie wbudowany model Chrome.
+
+Model nie wymyśla zdjęcia ani firmy docelowej — w trybie „Zastąp" takie pola
+zostają wyczyszczone. Wyniki zawsze trzeba przejrzeć przed wygenerowaniem CV.
 
 ---
 
@@ -180,6 +221,9 @@ słów kluczowych i tworzenie dokumentów odbywają się w przeglądarce przez J
 Pliki są rozpakowywane/dekodowane i czytane lokalnie — nie są nigdzie wysyłane.
 Nie ma żadnych żądań sieciowych, statystyk ani przesyłania danych; profil żyje
 wyłącznie w `localStorage` przeglądarki, dopóki użytkownik sam go nie wyeksportuje.
+Uzupełnianie AI również odbywa się lokalnie: wbudowany model Chrome działa na
+urządzeniu, a opcjonalny Ollama łączy się tylko z `127.0.0.1`. Tekst CV nie jest
+wysyłany do żadnej chmury ani usługi zewnętrznej.
 
 ---
 

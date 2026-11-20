@@ -186,8 +186,15 @@
       <label class="checkbox-row"><input type="checkbox" id="import-replace" checked> <span data-i18n="importReplace">Replace existing entries</span></label>
       <div class="download-row">
         <button type="button" id="import-apply" class="btn primary" data-i18n="importApply">Fill fields</button>
+        <button type="button" id="import-ai" class="btn ghost" data-i18n="importAi">AI fill from CV (local model)</button>
         <button type="button" class="btn ghost" data-close-import data-i18n="Cancel">Cancel</button>
       </div>
+      <p class="import-note" data-i18n="aiNote">Local AI note: a small model runs on your own device GPU. Chrome 148+ (also on Android) uses its built-in model; otherwise install Ollama and run ollama pull llama3.2:3b. Nothing is uploaded.</p>
+      <details class="ai-details">
+        <summary data-i18n="aiAdvanced">Ollama settings (desktop fallback)</summary>
+        <label><span data-i18n="aiOllamaUrl">Ollama URL</span><input type="text" id="ai-ollama-url" value="http://127.0.0.1:11434" spellcheck="false"></label>
+        <label><span data-i18n="aiOllamaModel">Model</span><input type="text" id="ai-ollama-model" value="llama3.2:3b" spellcheck="false"></label>
+      </details>
       <p id="import-status" class="import-status" role="status" hidden></p>
     </div>
   </div>

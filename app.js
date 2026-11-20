@@ -1440,6 +1440,7 @@ function letterBody(p, text) {
 
 /* --------------------------------------------------------- DOCX import UI */
 let IMPORT_FILE = null, IMPORT_PROFILE = null, IMPORT_STATUS = null, IMPORT_DONE_TIMER = null, IMPORT_DONE_FIELDS = '';
+let IMPORT_LINES = [], AI_BUSY = false;
 
 function importHasFields(p) {
   return !!(p.name || p.title || p.summary || p.contact.email || p.contact.phone
@@ -1487,6 +1488,7 @@ async function importReadFile(file) {
     if (!isPdf && !isDocx) throw new Error(T('importBadExt'));
     const lines = isPdf ? pdfLines(await file.arrayBuffer()) : docxLines(await file.arrayBuffer());
     if (!lines.length) throw new Error(T(isPdf ? 'importPdfNoText' : 'importEmptyDoc'));
+    IMPORT_LINES = lines;
     IMPORT_PROFILE = parseDocxProfile(lines);
     const fields = importFieldSummary(IMPORT_PROFILE);
     const hasFields = importHasFields(IMPORT_PROFILE);
@@ -1495,6 +1497,7 @@ async function importReadFile(file) {
     $('#import-apply').disabled = !importHasFields(IMPORT_PROFILE);
   } catch (e) {
     IMPORT_PROFILE = null;
+    IMPORT_LINES = [];
     importSetStatus('importError', 'error',
       { error: e && e.message ? e.message : String(e) });
   }
@@ -1559,9 +1562,227 @@ function importApply() {
     IMPORT_DONE_TIMER = setTimeout(() => { bar.hidden = true; }, 9000);
   }
 }
+/* ---------------- local AI fill: Chrome Prompt API or Ollama on localhost ----------------
+   No key, no upload, no library. Chrome 148+ (desktop and Android) has a built-in
+   model that runs on the device GPU. Where it is missing, an Ollama server on
+   localhost is used instead; the CV text never leaves the machine. */
+const AI_DEFAULT_URL = 'http://127.0.0.1:11434';
+const AI_DEFAULT_MODEL = 'llama3.2:3b';
+const AI_SYSTEM_PROMPT = 'Convert the given CV text into one JSON object for an ATS CV builder. ' +
+  'Reply with JSON only - no markdown, no comments. Use exactly these keys: ' +
+  'name, title, summary, skills (array of strings), ' +
+  'experience (array of objects with title, company, location, start, end, about and bullets as an array of strings), ' +
+  'education (array of objects with degree, school, location, start, end, details), ' +
+  'certifications (array of objects with name, issuer, year), ' +
+  'projects (array of objects with name, description and tech as an array of strings), ' +
+  'languages (array of objects with name and level), ' +
+  'contact (object with location, phone, email, linkedin, portfolio). ' +
+  'Use an empty string or empty array when a value is unknown. Never invent facts. ' +
+  'Keep the wording and language of the original CV. Do not include a photo or a target company.';
+
+function aiText(v) {
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.map(aiText).filter(Boolean).join(', ');
+  if (typeof v === 'object') return Object.values(v).map(aiText).filter(Boolean).join(' ');
+  return String(v).trim();
+}
+function aiProfileToText(p) {
+  const rows = [], q = p || {};
+  if (q.name) rows.push(aiText(q.name));
+  if (q.title) rows.push(aiText(q.title));
+  const c = q.contact || {};
+  const contact = ['location', 'phone', 'email', 'linkedin', 'portfolio']
+    .map((k) => aiText(c[k])).filter(Boolean).join(' | ');
+  if (contact) rows.push(contact);
+  if (q.summary) rows.push('SUMMARY', aiText(q.summary));
+  if ((q.skills || []).length) rows.push('SKILLS', aiText(q.skills));
+  if ((q.experience || []).length) {
+    rows.push('WORK EXPERIENCE');
+    q.experience.forEach((it) => {
+      if (!it || typeof it !== 'object') return;
+      const head = ['title', 'company', 'location', 'start', 'end']
+        .map((k) => aiText(it[k])).filter(Boolean).join(' | ');
+      if (head) rows.push(head);
+      if (it.about) rows.push(aiText(it.about));
+      (it.bullets || []).forEach((b) => { if (aiText(b)) rows.push('- ' + aiText(b)); });
+    });
+  }
+  if ((q.education || []).length) {
+    rows.push('EDUCATION');
+    q.education.forEach((it) => {
+      if (it && typeof it === 'object') rows.push(
+        ['degree', 'school', 'location', 'start', 'end', 'details']
+          .map((k) => aiText(it[k])).filter(Boolean).join(' | '));
+    });
+  }
+  if ((q.certifications || []).length) {
+    rows.push('CERTIFICATIONS');
+    q.certifications.forEach((it) => { if (aiText(it)) rows.push(aiText(it)); });
+  }
+  if ((q.projects || []).length) {
+    rows.push('PROJECTS');
+    q.projects.forEach((it) => { if (aiText(it)) rows.push(aiText(it)); });
+  }
+  if ((q.languages || []).length) {
+    rows.push('LANGUAGES');
+    q.languages.forEach((it) => { if (aiText(it)) rows.push(aiText(it)); });
+  }
+  return rows.filter(Boolean).join('\n');
+}
+function aiParseJson(raw) {
+  let s = String(raw || '').trim();
+  s = s.replace(/^\s*```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '');
+  let data;
+  try { data = JSON.parse(s); }
+  catch (e) {
+    const a = s.indexOf('{'), b = s.lastIndexOf('}');
+    if (a < 0 || b <= a) throw new Error(T('aiBadReply'));
+    try { data = JSON.parse(s.slice(a, b + 1)); }
+    catch (e2) { throw new Error(T('aiBadReply')); }
+  }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) throw new Error(T('aiBadReply'));
+  return data;
+}
+function aiNormalize(data) {
+  const src = data && typeof data === 'object' ? data : {};
+  const out = emptyProfile();
+  ['name', 'title', 'summary'].forEach((k) => { out[k] = aiText(src[k]); });
+  const c = src.contact && typeof src.contact === 'object' ? src.contact : {};
+  Object.keys(out.contact).forEach((k) => { out.contact[k] = aiText(c[k]); });
+  const strings = (k) => Array.isArray(src[k]) ? src[k].map(aiText).filter(Boolean) : [];
+  const objects = (k, fields, arrays) => {
+    const result = [];
+    for (const item of (Array.isArray(src[k]) ? src[k] : [])) {
+      const o = typeof item === 'string' ? { [fields[0]]: item }
+        : (item && typeof item === 'object' ? item : null);
+      if (!o) continue;
+      const row = {};
+      fields.forEach((f) => { row[f] = aiText(o[f]); });
+      (arrays || []).forEach((f) => {
+        row[f] = Array.isArray(o[f]) ? o[f].map(aiText).filter(Boolean) : [];
+      });
+      if (Object.values(row).some(Boolean)) result.push(row);
+    }
+    return result;
+  };
+  out.skills = strings('skills');
+  out.experience = objects('experience', ['title', 'company', 'location', 'start', 'end', 'about'], ['bullets']);
+  out.education = objects('education', ['degree', 'school', 'location', 'start', 'end', 'details']);
+  out.certifications = objects('certifications', ['name', 'issuer', 'year']);
+  out.projects = objects('projects', ['name', 'description'], ['tech']);
+  out.languages = objects('languages', ['name', 'level']);
+  return out;
+}
+function importSetRaw(text, cls) {
+  const el = $('#import-status');
+  if (!el) return;
+  el.textContent = text;
+  el.className = 'import-status' + (cls ? ' ' + cls : '');
+  el.hidden = false;
+}
+async function aiCallChrome(text, progress) {
+  if (!window.LanguageModel) throw new Error(T('aiNoBrowserModel'));
+  let availability = 'unknown';
+  try { availability = await window.LanguageModel.availability(); } catch (e) { /* handled below */ }
+  if (availability === 'unavailable') throw new Error(T('aiNoBrowserModel'));
+  progress(T('aiPreparing'));
+  let session = null;
+  try {
+    session = await window.LanguageModel.create({
+      monitor(m) {
+        m.addEventListener('downloadprogress', (ev) => {
+          if (ev && typeof ev.loaded === 'number' && typeof ev.total === 'number' && ev.total)
+            progress(T('aiDownloading') + ' ' + Math.round(ev.loaded / ev.total * 100) + '%');
+        });
+      }
+    });
+  } catch (e) {
+    throw new Error(T('aiNoBrowserModel') + ' ' + (e && e.message ? e.message : ''));
+  }
+  try {
+    const raw = await session.prompt(AI_SYSTEM_PROMPT + '\n\nCV text:\n' + text);
+    return aiNormalize(aiParseJson(raw));
+  } finally {
+    if (session && typeof session.destroy === 'function') session.destroy();
+  }
+}
+async function aiCallOllama(text, progress) {
+  const u = $('#ai-ollama-url'), m = $('#ai-ollama-model');
+  const url = (u && u.value.trim()) || ST.settings.ollama_url || AI_DEFAULT_URL;
+  const model = (m && m.value.trim()) || ST.settings.ollama_model || AI_DEFAULT_MODEL;
+  ST.settings.ollama_url = url;
+  ST.settings.ollama_model = model;
+  progress(T('aiOllamaWorking'));
+  let res;
+  try {
+    res = await fetch(url.replace(/\/+$/, '') + '/api/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model, system: AI_SYSTEM_PROMPT, prompt: 'CV text:\n' + text,
+        stream: false, format: 'json', options: { temperature: 0, num_predict: 2048 }
+      })
+    });
+  } catch (e) {
+    throw new Error(T('aiOllamaUnreachable', { error: e && e.message ? e.message : String(e) }));
+  }
+  if (!res.ok) {
+    let detail = '';
+    try { detail = (await res.text()).slice(0, 200); } catch (e) { /* ignore */ }
+    throw new Error(T('aiOllamaHttp', { error: String(res.status) + (detail ? ': ' + detail : '') }));
+  }
+  let body;
+  try { body = await res.json(); } catch (e) { throw new Error(T('aiBadReply')); }
+  return aiNormalize(aiParseJson(body.response || ''));
+}
+async function aiFill() {
+  if (AI_BUSY) return;
+  const text = (IMPORT_LINES || []).join('\n').trim() || aiProfileToText(ST.profile);
+  if (!text.trim()) { importSetStatus('aiNoText', 'warn'); return; }
+  AI_BUSY = true;
+  const btn = $('#import-ai');
+  if (btn) btn.disabled = true;
+  try {
+    let profile = null;
+    if (window.LanguageModel) {
+      try {
+        profile = await aiCallChrome(text, (msg) => importSetRaw(msg, 'info'));
+      } catch (e) { /* fall back to a local Ollama server */ }
+    }
+    if (!profile) profile = await aiCallOllama(text, (msg) => importSetRaw(msg, 'info'));
+    const fields = importFieldSummary(profile);
+    const fromChooser = !!($('#pane-chooser') && $('#pane-chooser').classList.contains('active'));
+    mergeImportedProfile(profile, $('#import-replace').checked);
+    saveLocal();
+    buildOutputs(false, true);
+    renderWizard();
+    renderTabs();
+    if (fromChooser) {
+      const dontAsk = $('#dont-ask');
+      if (dontAsk) ST.settings.dont_ask = dontAsk.checked;
+      setMode('tabs', true);
+    }
+    $('#import-modal').hidden = true;
+    const bar = $('#import-done');
+    if (bar) {
+      IMPORT_DONE_FIELDS = fields;
+      bar.textContent = T('importApplied', { fields });
+      bar.hidden = false;
+      clearTimeout(IMPORT_DONE_TIMER);
+      IMPORT_DONE_TIMER = setTimeout(() => { bar.hidden = true; }, 9000);
+    }
+  } catch (e) {
+    importSetStatus('aiError', 'error',
+      { error: e && e.message ? e.message : String(e) });
+  } finally {
+    AI_BUSY = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
 function openImport(evt) {
   IMPORT_FILE = null;
   IMPORT_PROFILE = null;
+  IMPORT_LINES = [];
   // The scan/OCR warning belongs to PDF imports; keep the DOCX dialog tidy.
   const note = $('#import-pdf-note');
   const source = evt && evt.currentTarget ? evt.currentTarget.id : '';
@@ -2091,6 +2312,54 @@ const WEB_TEXT = {
     en: 'Document imported: {fields}. Review the fields before generating.',
     pl: 'Zaimportowano dokument: {fields}. Sprawdź pola przed wygenerowaniem.',
     ar: 'تم استيراد المستند: {fields}. راجع الحقول قبل الإنشاء.' },
+  importAi: {
+    en: 'AI fill from CV (local model)',
+    pl: 'Uzupełnij z CV przez AI (model lokalny)',
+    ar: 'املأ من السيرة الذاتية بالذكاء الاصطناعي (نموذج محلي)' },
+  aiNote: {
+    en: 'Local AI note: a small model runs on your own device GPU. Chrome 148+ (also on Android) uses its built-in model; otherwise install Ollama and run ollama pull llama3.2:3b. Nothing is uploaded.',
+    pl: 'Uwaga AI: mały model działa na GPU Twojego urządzenia. Chrome 148+ (również na Androidzie) używa modelu wbudowanego; w przeciwnym razie zainstaluj Ollama i uruchom ollama pull llama3.2:3b. Nic nie jest wysyłane.',
+    ar: 'ملاحظة الذكاء الاصطناعي: يعمل نموذج صغير على معالج الرسوم GPU في جهازك. يستخدم Chrome 148+ (وإصدار أندرويد) نموذجاً مدمجاً؛ وإلا ثبّت Ollama وقم بتشغيل ollama pull llama3.2:3b. لا يتم رفع أي شيء.' },
+  aiAdvanced: {
+    en: 'Ollama settings (desktop fallback)',
+    pl: 'Ustawienia Ollama (awaryjnie na desktopie)',
+    ar: 'إعدادات Ollama (بديل على سطح المكتب)' },
+  aiOllamaUrl: { en: 'Ollama URL', pl: 'Adres Ollama', ar: 'عنوان Ollama' },
+  aiOllamaModel: { en: 'Model', pl: 'Model', ar: 'النموذج' },
+  aiPreparing: {
+    en: 'Preparing the local model...', pl: 'Przygotowywanie modelu lokalnego...',
+    ar: 'جارٍ تحضير النموذج المحلي...' },
+  aiDownloading: {
+    en: 'Downloading the local model...', pl: 'Pobieranie modelu lokalnego...',
+    ar: 'جارٍ تنزيل النموذج المحلي...' },
+  aiOllamaWorking: {
+    en: 'Local Ollama model is reading the CV...',
+    pl: 'Lokalny model Ollama analizuje CV...',
+    ar: 'نموذج Ollama المحلي يقرأ السيرة الذاتية...' },
+  aiNoBrowserModel: {
+    en: 'This browser has no built-in text model. Use Chrome 148+ (also works on Android) or install Ollama on your computer.',
+    pl: 'Ta przeglądarka nie ma wbudowanego modelu tekstowego. Użyj Chrome 148+ (działa też na Androidzie) lub zainstaluj Ollama na komputerze.',
+    ar: 'هذا المتصفح لا يحتوي على نموذج نص مدمج. استخدم Chrome 148+ (يعمل أيضاً على أندرويد) أو ثبّت Ollama على جهاز الكمبيوتر.' },
+  aiOllamaUnreachable: {
+    en: 'Could not reach Ollama: {error}. On a phone, use Chrome 148+ with its built-in model. On a computer, install Ollama, run ollama pull llama3.2:3b and start it. This page may also need OLLAMA_ORIGINS=https://raminassar-arch.github.io.',
+    pl: 'Nie można połączyć się z Ollama: {error}. Na telefonie użyj Chrome 148+ z wbudowanym modelem. Na komputerze zainstaluj Ollama, uruchom ollama pull llama3.2:3b i start Ollama. Ta strona może też wymagać OLLAMA_ORIGINS=https://raminassar-arch.github.io.',
+    ar: 'تعذر الوصول إلى Ollama: {error}. على الهاتف استخدم Chrome 148+ بنمواجه المدمج. على الكمبيوتر ثبّت Ollama وشغّل ollama pull llama3.2:3b ثم ابدأه. قد تحتاج هذه الصفحة أيضاً إلى OLLAMA_ORIGINS=https://raminassar-arch.github.io.' },
+  aiOllamaHttp: {
+    en: 'Ollama returned an error: {error}',
+    pl: 'Ollama zwróciła błąd: {error}',
+    ar: 'أرجع Ollama خطأ: {error}' },
+  aiBadReply: {
+    en: 'The local model did not return a valid JSON object.',
+    pl: 'Model lokalny nie zwrócił poprawnego obiektu JSON.',
+    ar: 'لم يُرجع النموذج المحلي كائن JSON صالحاً.' },
+  aiNoText: {
+    en: 'No text to analyse. Import a DOCX/PDF first or fill some fields.',
+    pl: 'Brak tekstu do analizy. Najpierw zaimportuj DOCX/PDF lub wypełnij kilka pól.',
+    ar: 'لا يوجد نص للتحليل. استورد ملف DOCX/PDF أولاً أو املأ بعض الحقول.' },
+  aiError: {
+    en: 'Could not fill with local AI: {error}',
+    pl: 'Nie udało się uzupełnić przez lokalne AI: {error}',
+    ar: 'تعذر الملء بالذكاء الاصطناعي المحلي: {error}' },
   fileFormat: { en: 'File format', pl: 'Format pliku', ar: 'تنسيق الملف' },
   formatPdf: { en: 'PDF (Save as PDF)', pl: 'PDF (Zapisz jako PDF)', ar: 'PDF (حفظ كملف PDF)' },
   formatWord: { en: 'Word (.doc)', pl: 'Word (.doc)', ar: 'Word (.doc)' },
@@ -2272,6 +2541,7 @@ function bindEvents() {
     if (f) importReadFile(f);
   });
   $('#import-apply').addEventListener('click', importApply);
+  $('#import-ai').addEventListener('click', aiFill);
 
   $('#wiz-back').addEventListener('click', () => { if (ST.wizStep > 0) { ST.wizStep--; renderWizard(); } });
   $('#wiz-next').addEventListener('click', () => {
@@ -2298,6 +2568,9 @@ function bindEvents() {
 
 function boot() {
   loadLocal();
+  const aiUrl = $('#ai-ollama-url'), aiModel = $('#ai-ollama-model');
+  if (aiUrl && ST.settings.ollama_url) aiUrl.value = ST.settings.ollama_url;
+  if (aiModel && ST.settings.ollama_model) aiModel.value = ST.settings.ollama_model;
   bindEvents();
   applyLanguage();
   renderWizard();
