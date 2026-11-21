@@ -75,11 +75,6 @@ const I18N = {
     "pl": "Wypełnij, wybierając zakładki",
     "ar": "التعبئة باختيار العلامات"
   },
-  "Don't ask again on startup": {
-    "en": "Don't ask again on startup",
-    "pl": "Nie pytaj ponownie przy starcie",
-    "ar": "عدم السؤال مرة أخرى عند التشغيل"
-  },
   "Change this any time from File > Choose fill mode...": {
     "en": "Change this any time from File > Choose fill mode...",
     "pl": "Moūesz to zmienić w każdej chwili: Plik > Wybierz tryb wypełniania...",
@@ -1574,11 +1569,6 @@ const I18N = {
     "en": "Fill everything yourself on organised tabs.",
     "pl": "Wypełnij wszystko sam na uporządkowanych zakładkach.",
     "ar": "املأ كل شيء بنفسك في علامات منظمة."
-  },
-  "dontAsk": {
-    "en": "Don't ask again on startup",
-    "pl": "Nie pytaj ponownie przy starcie",
-    "ar": "لا تسأل مرة أخرى عند التشغيل"
   },
   "yourOutputs": {
     "en": "Your outputs",

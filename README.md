@@ -1,4 +1,4 @@
-# CVBuilder v2.5.0 – wersja Google Sites (statyczna)
+# CVBuilder v2.7.0 – wersja Google Sites (statyczna)
 
 Statyczna wersja CVBuildera: **same pliki HTML, CSS i JavaScript**, bez serwera
 i bez Pythona na komputerze użytkownika. Wystarczy dowolny hosting statyczny
@@ -47,28 +47,20 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
   kluczowych z ogłoszenia oraz wynik 0–100 z listą znalezisk.
 - **Styl dokumentu**: czarno-biały, zielono-czarny, różowo-czarny (tylko kolory – bez
   tabel, pól tekstowych i obrazów w tekście, żeby ATS czytał treść poprawnie).
-- **Import DOCX i PDF** — na **pierwszym ekranie** (wybór trybu) są karty
-  *Importuj DOCX* i *Importuj PDF*, obok kreatora i zakładek. Otwierają panel
-  wewnątrz strony (bez nowego okna): przeciągnij plik `.docx` lub `.pdf` do pola
-  lub wybierz go z dysku, a aplikacja
-  sama rozpoznaje dane kontaktowe, sekcje CV, umiejętności, doświadczenie,
-  wykształcenie, certyfikaty, projekty i języki. Domyślnie zaznaczone jest
-  **Zastąp istniejące pola**; po odznaczeniu puste pola są uzupełniane, a nowe
-  wpisy listy dodawane bez usuwania poprzednich. Po imporcie od razu przechodzisz
-  do wypełnionych zakładek. Statusy i komunikaty o błędach są przetłumaczone na
-  EN/PL/AR. W oknie importu PDF wyświetlana jest wskazówka o ograniczeniu: plik
-  musi mieć warstwę tekstu; skany i same obrazy nie mogą być odczytane — najpierw
-  użyj OCR lub wklej tekst wyciągnięty np. przez asystenta AI. Plik jest analizowany
-  wyłącznie w przeglądarce — bez przesyłania, bibliotek i serwera.
-- **Lokalne uzupełnianie AI z CV** — lekkim modelem na **własnym GPU urządzenia**
-  wypełnia cały profil (dane kontaktowe, podsumowanie, umiejętności, doświadczenie,
-  wykształcenie, certyfikaty, projekty i języki) z tekstu CV. Przycisk
-  *Uzupełnij z CV przez AI* znajduje się w panelu importu. Nie ma klucza API, konta
-  ani przesyłania — na telefonie działa wbudowany model przeglądarki Chrome 148+
-  (także na Androidzie), a na desktopie awaryjnie lokalny serwer Ollama
-  (`http://127.0.0.1:11434`, model `llama3.2:3b`). Po uzupełnieniu od razu
-  przechodzisz do wypełnionych zakładek. Statusy i błędy są przetłumaczone na
-  EN/PL/AR. Szczegóły poniżej.
+- **Import PDF/Word + Smart fill — jeden przycisk.** Na pierwszym ekranie jest jedna karta
+  *Importuj PDF/Word + inteligentne uzupełnienie* (ten sam przycisk jest też w nagłówku).
+  Otwiera panel wewnątrz strony (bez nowego okna): przeciągnij jeden plik `.docx` lub
+  tekstowy `.pdf` do pola albo wybierz go z dysku, kliknij **Importuj + uzupełnij** —
+  a aplikacja sama rozpoznaje dane kontaktowe, podsumowanie, umiejętności, doświadczenie,
+  wykształcenie, certyfikaty, projekty i języki i wpisuje je do formularza.
+  To ten sam deterministyczny czytnik co w wersji desktopowej: **bez modelu AI, Ollamy,
+  pobierania, sieci i ustawień**. Domyślnie zaznaczone jest **Zastąp istniejące wpisy**;
+  po odznaczeniu puste pola są uzupełniane, a nowe wpisy listy dodawane bez usuwania
+  poprzednich. Po imporcie od razu przechodzisz do wypełnionych zakładek. Statusy i błędy
+  są przetłumaczone na EN/PL/AR. Pliki PDF muszą mieć warstwę tekstu; skany i same
+  obrazy wymagają najpierw OCR. Plik jest analizowany wyłącznie w przeglądarce.
+- Start zawsze wygląda tak samo — panel startowy (wybór trybu) pojawia się przy każdym
+  otwarciu; nie ma już opcji „Nie pytaj ponownie przy starcie".
 - **Ostatni ekran ma jeden przycisk `Generuj`.** Najpierw wybierasz styl dokumentu,
   potem zaznaczasz format(y): **PDF** i/lub **Word (`.doc`)** – pliki `.txt` nie są
   już oferowane. Po kliknięciu `Generuj` powstają zaznaczone pliki:
@@ -80,35 +72,12 @@ aplikacja działa także bez internetu. Dane pozostają w przeglądarce.
 
 ---
 
-## Lokalne uzupełnianie AI (bez chmury, bez klucza)
+## Inteligentne uzupełnienie (bez chmury, bez klucza)
 
-W panelu importu jest przycisk **Uzupełnij z CV przez AI (model lokalny)**.
-Model analizuje tekst, który już jest w aplikacji (wczytany DOCX/PDF albo pola
-wypełnione ręcznie) i zwraca cały profil w jednym obiekcie JSON. Nie ma żadnych
-wywołań API, kluczy ani przesyłania CV na zewnętrzny serwer.
-
-### Telefon (smartfon)
-
-Użyj **Chrome 148+ na Androidzie** — ma wbudowany model językowy (`LanguageModel`,
-tzw. Prompt API), który działa na GPU/NPU telefonu. Nie trzeba nic instalować.
-Aplikacja sama wykrywa dostępność modelu i pokazuje postęp pobrania. Starsze
-przeglądarki, Safari i Firefox nie mają tego modelu — wtedy komunikat wskazuje,
-jak włączyć AI (zaktualizuj Chrome albo użyj komputera z Ollamą).
-
-### Komputer (fallback Ollama)
-
-1. Zainstaluj [Ollama](https://ollama.com/download) i uruchom ją.
-2. Pobierz lekki model raz: `ollama pull llama3.2:3b`.
-3. W panelu importu rozwiń **Ustawienia Ollama** — domyślny adres to
-   `http://127.0.0.1:11434`, model `llama3.2:3b`. Ustawienia zapisują się lokalnie.
-
-Strona GitHub Pages może wymagać dopuszczenia źródła (CORS):
-`OLLAMA_ORIGINS=https://raminassar-arch.github.io` przed startem Ollamy.
-Na telefonie lokalny Ollama nie jest osiągalny (localhost oznacza telefon),
-dlatego tam działa wyłącznie wbudowany model Chrome.
-
-Model nie wymyśla zdjęcia ani firmy docelowej — w trybie „Zastąp" takie pola
-zostają wyczyszczone. Wyniki zawsze trzeba przejrzeć przed wygenerowaniem CV.
+Jeden przycisk *Importuj PDF/Word + inteligentne uzupełnienie* czyta plik i wypełnia
+cały profil wbudowanym, deterministycznym czytnikiem — bez modelu językowego, Ollamy,
+klucza API, pobierania i połączeń sieciowych. Działa identycznie w przeglądarce i w
+wersji desktopowej. Wyniki zawsze warto przejrzeć przed wygenerowaniem CV.
 
 ---
 
@@ -169,7 +138,7 @@ Szkielet kodu:
 
 ```html
 <iframe src="https://raminassar-arch.github.io/cvbuilder-web/"
-        title="CVBuilder v2.5.0 – generator CV ATS (EN/PL/AR)"
+        title="CVBuilder v2.7.0 – generator CV ATS (EN/PL/AR)"
         style="width:100%;height:1000px;border:0;display:block"
         allow="clipboard-write"></iframe>
 ```
@@ -221,9 +190,8 @@ słów kluczowych i tworzenie dokumentów odbywają się w przeglądarce przez J
 Pliki są rozpakowywane/dekodowane i czytane lokalnie — nie są nigdzie wysyłane.
 Nie ma żadnych żądań sieciowych, statystyk ani przesyłania danych; profil żyje
 wyłącznie w `localStorage` przeglądarki, dopóki użytkownik sam go nie wyeksportuje.
-Uzupełnianie AI również odbywa się lokalnie: wbudowany model Chrome działa na
-urządzeniu, a opcjonalny Ollama łączy się tylko z `127.0.0.1`. Tekst CV nie jest
-wysyłany do żadnej chmury ani usługi zewnętrznej.
+Inteligentne uzupełnienie działa lokalnie wbudowanym czytnikiem: bez modelu AI,
+bez Ollamy i bez żadnych połączeń z chmurą czy usługą zewnętrzną.
 
 ---
 

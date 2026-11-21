@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="description" content="ATS-optimized CV generator and checker. Free, private, runs entirely in your browser.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
-  <title>CVBuilder v2.5.0 - ATS CV Generator</title>
+  <title>CVBuilder v2.7.0 - ATS CV Generator</title>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -14,7 +14,7 @@
       <div class="brand">
         <span class="brand-mark">CV</span>
         <div>
-          <h1 id="app-title">CVBuilder v2.5.0</h1>
+          <h1 id="app-title">CVBuilder v2.7.0</h1>
           <p id="app-subtitle" class="subtitle">ATS CV Generator</p>
         </div>
       </div>
@@ -24,7 +24,7 @@
           <button type="button" class="lang-btn" data-lang="pl" title="Polski">PL</button>
           <button type="button" class="lang-btn" data-lang="ar" title="العربية">AR</button>
         </div>
-        <button type="button" id="import-btn" class="ghost-btn" data-i18n="importDocx">Import DOCX</button>
+        <button type="button" id="import-btn" class="ghost-btn" data-i18n="importSmart">Import PDF/Word + Smart fill</button>
         <button type="button" id="mode-toggle" class="ghost-btn" data-i18n="switchMode">Fill by tabs instead</button>
         <button type="button" id="about-btn" class="ghost-btn" data-i18n="about">About</button>
       </nav>
@@ -49,21 +49,12 @@
             <strong data-i18n="tabsMode">Manual tabs</strong>
             <span class="muted" data-i18n="tabsDesc">Fill everything yourself on organised tabs.</span>
           </button>
-          <button type="button" class="choice-card" id="choose-docx">
+          <button type="button" class="choice-card" id="choose-import">
             <span class="choice-icon">&#128196;</span>
-            <strong data-i18n="importDocx">Import DOCX</strong>
-            <span class="muted" data-i18n="docxDesc">Fill the form from an existing Word .docx CV.</span>
-          </button>
-          <button type="button" class="choice-card" id="choose-pdf">
-            <span class="choice-icon">&#128196;</span>
-            <strong data-i18n="importPdf">Import PDF</strong>
-            <span class="muted" data-i18n="pdfDesc">Fill the form from an existing text-based PDF CV.</span>
+            <strong data-i18n="importSmart">Import PDF/Word + Smart fill</strong>
+            <span class="muted" data-i18n="smartDesc">One file, one click - pick a .docx or text-based .pdf CV and every section is filled automatically, offline.</span>
           </button>
         </div>
-        <label class="checkbox-row">
-          <input type="checkbox" id="dont-ask">
-          <span data-i18n="dontAsk">Don't ask again on startup</span>
-        </label>
       </div>
     </section>
 
@@ -153,7 +144,7 @@
 
   <footer class="app-footer">
     <span data-i18n="privacyNote">Everything runs in your browser. Nothing is uploaded.</span>
-    <span id="footer-version">CVBuilder v2.5.0</span>
+    <span id="footer-version">CVBuilder v2.7.0</span>
   </footer>
 
   <!-- Hidden print area: populated with the themed document before printing to PDF -->
@@ -164,19 +155,19 @@
     <div class="modal-backdrop" data-close-modal></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="about-modal-title">
       <button type="button" class="modal-close" data-close-modal aria-label="Close">&times;</button>
-      <h2 id="about-modal-title">CVBuilder v2.5.0</h2>
+      <h2 id="about-modal-title">CVBuilder v2.7.0</h2>
       <p id="about-body"></p>
     </div>
   </div>
 
-  <!-- DOCX/PDF import dialog: parsing happens locally, no file ever leaves the browser -->
+  <!-- PDF/Word smart-fill dialog: reading and filling happen locally, no file ever leaves the browser -->
   <div id="import-modal" class="modal" hidden>
     <div class="modal-backdrop" data-close-import></div>
     <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="import-modal-title">
       <button type="button" class="modal-close" data-close-import aria-label="Close">&times;</button>
-      <h2 id="import-modal-title" data-i18n="importTitle">Fill the form from a DOCX or PDF file</h2>
-      <p class="muted" data-i18n="importHint">Choose a Word .docx or text-based PDF CV. Its text is read locally in your browser and matched to the form fields. Nothing is uploaded. Scanned/image-only PDFs cannot be read.</p>
-      <p id="import-pdf-note" class="import-note" data-i18n="pdfImportNote">PDF note: only PDFs with a text layer can be read. For scans or image-only files, run OCR first or paste text extracted by an AI assistant.</p>
+      <h2 id="import-modal-title" data-i18n="importTitle">Import PDF/Word + Smart fill</h2>
+      <p class="muted" data-i18n="importHint">Choose one Word .docx or text-based PDF CV. Its text is read locally in your browser and filled into every section automatically - no model, no upload, no settings.</p>
+      <p id="import-pdf-note" class="import-note" data-i18n="pdfImportNote">PDF note: only PDFs with a text layer can be read. For scans or image-only files, run OCR first, then import the extracted text as a DOCX.</p>
       <label id="import-zone" class="import-zone" for="import-file">
         <span class="import-zone-icon">&#128196;</span>
         <span data-i18n="importDrop">Drop a .docx or .pdf file here, or click to browse</span>
@@ -185,16 +176,10 @@
       <p id="import-filename" class="import-filename" hidden></p>
       <label class="checkbox-row"><input type="checkbox" id="import-replace" checked> <span data-i18n="importReplace">Replace existing entries</span></label>
       <div class="download-row">
-        <button type="button" id="import-apply" class="btn primary" data-i18n="importApply">Fill fields</button>
-        <button type="button" id="import-ai" class="btn ghost" data-i18n="importAi">AI fill from CV (local model)</button>
+        <button type="button" id="import-apply" class="btn primary" data-i18n="importSmartApply">Import + Smart fill</button>
         <button type="button" class="btn ghost" data-close-import data-i18n="Cancel">Cancel</button>
       </div>
-      <p class="import-note" data-i18n="aiNote">Local AI note: a small model runs on your own device GPU. Chrome 148+ (also on Android) uses its built-in model; otherwise install Ollama and run ollama pull llama3.2:3b. Nothing is uploaded.</p>
-      <details class="ai-details">
-        <summary data-i18n="aiAdvanced">Ollama settings (desktop fallback)</summary>
-        <label><span data-i18n="aiOllamaUrl">Ollama URL</span><input type="text" id="ai-ollama-url" value="http://127.0.0.1:11434" spellcheck="false"></label>
-        <label><span data-i18n="aiOllamaModel">Model</span><input type="text" id="ai-ollama-model" value="llama3.2:3b" spellcheck="false"></label>
-      </details>
+      <p class="import-note" data-i18n="importOfflineNote">Runs entirely in this browser: no model, no network and no uploads.</p>
       <p id="import-status" class="import-status" role="status" hidden></p>
     </div>
   </div>
